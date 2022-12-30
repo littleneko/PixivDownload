@@ -33,11 +33,11 @@ type BookmarkWorks struct {
 	Url       string    `json:"url"`
 	UserId    IdWrapper `json:"userId"`
 	UserName  string    `json:"userName"`
-	PageCount int       `json:"pageCount"`
+	PageCount int32     `json:"pageCount"`
 }
 
 type BookmarkBody struct {
-	Total int             `json:"total"`
+	Total int32           `json:"total"`
 	Works []BookmarkWorks `json:"works"`
 }
 

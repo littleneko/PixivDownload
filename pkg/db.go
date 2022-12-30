@@ -10,8 +10,8 @@ import (
 )
 
 type PixivDB interface {
-	IllustCount(id string) (int, error)
-	CheckIllust(id string, count int) (bool, error)
+	IllustCount(id string) (int32, error)
+	CheckIllust(id string, count int32) (bool, error)
 	SaveIllust(illust *Illust, hash string, fileName string) error
 	CheckDatabaseAndFile() error
 }
@@ -69,13 +69,13 @@ func GetDB(conf *Config) PixivDB {
 	return &PixivSqlite{db: db}
 }
 
-func (ps *PixivSqlite) IllustCount(id string) (int, error) {
+func (ps *PixivSqlite) IllustCount(id string) (int32, error) {
 	rows, err := ps.db.Query("SELECT COUNT(1) FROM illust WHERE illust_id = ?", id)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
-	count := 0
+	var count int32 = 0
 	for rows.Next() {
 		err := rows.Scan(&count)
 		if err != nil {
@@ -86,7 +86,7 @@ func (ps *PixivSqlite) IllustCount(id string) (int, error) {
 	return count, nil
 }
 
-func (ps *PixivSqlite) CheckIllust(id string, count int) (bool, error) {
+func (ps *PixivSqlite) CheckIllust(id string, count int32) (bool, error) {
 	cnt, err := ps.IllustCount(id)
 	if err != nil {
 		return false, err
