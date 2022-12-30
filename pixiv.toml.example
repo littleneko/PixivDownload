@@ -3,6 +3,7 @@ LogLevel = "INFO"
 DataPath = "pixiv"
 DatabaseType = "sqlite"
 SqlitePath = "database"
+FileNamePattern = "{user_id}_{user}/{id}_{title}"
 
 UserId = "123456"
 Cookie = "PHPSESSID=xxxx"
@@ -11,6 +12,5 @@ ScanInterval = 3600
 RetryInterval = 5
 ParserWorkerCount = 5
 DownloadWorkerCount = 20
-FileNamePattern = "{user_id}_{user}/{id}_{title}"
 UserIdWhiteList = ["123"]
 UserIdBlockList = []

@@ -19,6 +19,7 @@
 
 database/
 pixiv/
+illust/
 log/
 pixiv.toml
 pixiv-dl

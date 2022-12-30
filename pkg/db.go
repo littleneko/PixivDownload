@@ -1,18 +1,19 @@
-package main
+package pkg
 
 import (
 	"database/sql"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"os"
 	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
+	log "github.com/sirupsen/logrus"
 )
 
 type PixivDB interface {
-	IllustExist(id string) (bool, error)
+	IllustCount(id string) (int, error)
+	CheckIllust(id string, count int) (bool, error)
 	SaveIllust(illust *Illust, hash string, fileName string) error
+	CheckDatabaseAndFile() error
 }
 
 const (
@@ -43,14 +44,12 @@ type PixivSqlite struct {
 
 func GetDB(conf *Config) PixivDB {
 	if conf.DatabaseType != "sqlite" {
-		log.Fatalf("Not supported database type %s", conf.DatabaseType)
+		log.Fatalf("Not supported database type '%s'", conf.DatabaseType)
 	}
 
-	if _, err := os.Stat(conf.SqlitePath); os.IsNotExist(err) {
-		err = os.MkdirAll(conf.SqlitePath, 0755)
-		if err != nil {
-			log.Fatalf("Failed to create database, msg: %s", err)
-		}
+	err := CheckAndMkdir(conf.SqlitePath)
+	if err != nil {
+		log.Fatalf("Failed to create database dir, msg: %s", err)
 	}
 
 	db, err := sql.Open("sqlite3", filepath.Join(conf.SqlitePath, "pixiv.db"))
@@ -70,21 +69,29 @@ func GetDB(conf *Config) PixivDB {
 	return &PixivSqlite{db: db}
 }
 
-func (ps *PixivSqlite) IllustExist(id string) (bool, error) {
+func (ps *PixivSqlite) IllustCount(id string) (int, error) {
 	rows, err := ps.db.Query("SELECT COUNT(1) FROM illust WHERE illust_id = ?", id)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	defer rows.Close()
 	count := 0
 	for rows.Next() {
 		err := rows.Scan(&count)
 		if err != nil {
-			return false, err
+			return 0, err
 		}
 	}
 
-	return count > 0, nil
+	return count, nil
+}
+
+func (ps *PixivSqlite) CheckIllust(id string, count int) (bool, error) {
+	cnt, err := ps.IllustCount(id)
+	if err != nil {
+		return false, err
+	}
+	return cnt == count, nil
 }
 
 func (ps *PixivSqlite) SaveIllust(illust *Illust, hash string, fileName string) error {
@@ -95,5 +102,9 @@ func (ps *PixivSqlite) SaveIllust(illust *Illust, hash string, fileName string) 
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (ps *PixivSqlite) CheckDatabaseAndFile() error {
 	return nil
 }

@@ -1,4 +1,4 @@
-package main
+package pkg
 
 import (
 	"bytes"
@@ -36,11 +36,9 @@ func (m *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 }
 
 func InitLog(conf *Config) {
-	if _, err := os.Stat(conf.LogPath); os.IsNotExist(err) {
-		err = os.MkdirAll(conf.LogPath, 0755)
-		if err != nil {
-			log.Fatalf("Failed to create log dir, msg: %s", err)
-		}
+	err := CheckAndMkdir(conf.LogPath)
+	if err != nil {
+		log.Fatalf("Failed to create log dir, msg: %s", err)
 	}
 
 	writer, err := os.OpenFile(filepath.Join(conf.LogPath, "pixiv.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
