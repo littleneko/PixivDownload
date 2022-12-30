@@ -1,6 +1,6 @@
 LogPath = "log"
 LogLevel = "INFO"
-DataPath = "pixiv"
+DownloadPath = "illust"
 DatabaseType = "sqlite"
 SqlitePath = "database"
 FileNamePattern = "{user_id}_{user}/{id}_{title}"

@@ -29,6 +29,9 @@ const (
 	IllustDownloadReferUrl = "https://www.pixiv.net"
 )
 
+var ErrNotFound = errors.New("NotFound")
+var ErrFailedUnmarshal = errors.New("FailedUnmarshal")
+
 var IllegalFileNameChar = [...]string{"*", "\"", "<", ">", "?", "\\", "|", "/", ":"}
 
 func StandardizeFileName(name string) string {
@@ -72,7 +75,7 @@ func (w *Worker) request(url string, refer string) (*http.Response, error) {
 	}
 	if resp.StatusCode == 404 {
 		log.Warningf("404: %s", url)
-		return resp, nil
+		return resp, ErrNotFound
 	}
 	if resp.StatusCode != 200 {
 		return resp, errors.New(resp.Status)
@@ -149,6 +152,9 @@ func (w *BookmarkFetchWorker) ProcessBookmarks() {
 		}
 		w.retry(func() bool {
 			bmBody, err := w.GetBookmarks()
+			if err == ErrNotFound || err == ErrFailedUnmarshal {
+				return true
+			}
 			if err != nil {
 				return false
 			}
@@ -250,8 +256,7 @@ func (w *BookmarkFetchWorker) GetBookmarks() (*BookmarkBody, error) {
 	err = json.Unmarshal(resp.Body, &bmBody)
 	if err != nil {
 		log.Errorf("[BookmarkFetchWorker] Failed to unmarshal json, skip, err: %s, raw: %s", err, resp.Body)
-		bmBody.Total = -1
-		bmBody.Works = bmBody.Works[:0]
+		return nil, ErrFailedUnmarshal
 	}
 	return &bmBody, nil
 }
@@ -289,6 +294,9 @@ func (w *IllustInfoFetchWorker) Run() {
 func (w *IllustInfoFetchWorker) processIllustInfo(work *BookmarkWorks) {
 	w.retry(func() bool {
 		illusts, err := w.FetchIllustInfo(work)
+		if err == ErrNotFound || err == ErrFailedUnmarshal {
+			return true
+		}
 		if err != nil {
 			return false
 		}
@@ -327,7 +335,7 @@ func (w *IllustInfoFetchWorker) fetchIllustBasicInfo(work *BookmarkWorks) (*Illu
 	err = json.Unmarshal(iResp.Body, &illust)
 	if err != nil {
 		log.Errorf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, id: %s, err: %s, raw: %s", work.Id, err, iResp.Body)
-		illust.Id = "0"
+		return nil, ErrFailedUnmarshal
 	}
 	return &illust, nil
 }
@@ -348,7 +356,7 @@ func (w *IllustInfoFetchWorker) fetchIllustAllPages(seed *Illust) ([]*Illust, er
 	err = json.Unmarshal(iResp.Body, &illustPageBody)
 	if err != nil {
 		log.Warningf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, id: %s, err: %s, raw: %s", seed.Id, err, iResp.Body)
-		return nil, nil
+		return nil, ErrFailedUnmarshal
 	}
 
 	var illusts []*Illust
@@ -420,6 +428,9 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *Illust) {
 	fullFileName := filepath.Join(w.conf.DownloadPath, fileName)
 	w.retry(func() bool {
 		resp, err := w.request(illust.Urls.Original, IllustDownloadReferUrl)
+		if err == ErrNotFound || err == ErrFailedUnmarshal {
+			return true
+		}
 		if err != nil {
 			log.Warningf("[IllustDownloadWorker] Failed to download illust, retry, id: %s, url: %s, msg: %s", illust.Id, illust.Urls.Original, err)
 			return false
