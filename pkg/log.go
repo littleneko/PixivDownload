@@ -36,21 +36,24 @@ func (m *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 }
 
 func InitLog(conf *Config) {
-	err := CheckAndMkdir(conf.LogPath)
-	if err != nil {
-		log.Fatalf("Failed to create log dir, msg: %s", err)
+	if conf.LogToFile {
+		err := CheckAndMkdir(conf.LogPath)
+		if err != nil {
+			log.Fatalf("Failed to create log dir, msg: %s", err)
+		}
+
+		writer, err := os.OpenFile(filepath.Join(conf.LogPath, "pixiv.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("Failed to create log file: %v", err)
+		}
+		logrus.SetOutput(writer)
 	}
 
-	writer, err := os.OpenFile(filepath.Join(conf.LogPath, "pixiv.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		log.Fatalf("Failed to create log file: %v", err)
-	}
 	logLevel, err := logrus.ParseLevel(conf.LogLevel)
 	if err != nil {
 		log.Fatalf("Unknown log level '%s', msg: %s", conf.LogLevel, err)
 	}
 	logrus.SetLevel(logLevel)
-	logrus.SetOutput(writer)
 	logrus.SetReportCaller(true)
 	logrus.SetFormatter(&MyFormatter{})
 }
