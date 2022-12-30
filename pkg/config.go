@@ -3,6 +3,7 @@ package pkg
 import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"math"
 )
 
 type Config struct {
@@ -16,10 +17,13 @@ type Config struct {
 	UserId              string
 	Cookie              string
 	UserAgent           string
-	ScanInterval        uint64
-	RetryInterval       uint64
+	ScanIntervalSec     uint32
+	RetryIntervalSec    uint32
+	MaxRetryTimes       uint32
 	ParserWorkerCount   int
 	DownloadWorkerCount int
+	ParseTimeoutMs      int
+	DownloadTimeoutMs   int
 	Proxy               string
 	UserIdWhiteList     []string
 	UserIdBlockList     []string
@@ -49,10 +53,13 @@ func GetConfig(file string) *Config {
 	viper.SetDefault("DatabaseType", "sqlite")
 	viper.SetDefault("SqlitePath", "database")
 	viper.SetDefault("DownloadPath", "illust")
-	viper.SetDefault("ScanInterval", 3600)
-	viper.SetDefault("RetryInterval", 60)
+	viper.SetDefault("ScanIntervalSec", 3600)
+	viper.SetDefault("RetryIntervalSec", 60)
+	viper.SetDefault("MaxRetryTimes", math.MaxUint32)
 	viper.SetDefault("ParserWorkerCount", 5)
 	viper.SetDefault("DownloadWorkerCount", 10)
+	viper.SetDefault("ParseTimeoutMs", 5000)
+	viper.SetDefault("DownloadTimeoutMs", 60000)
 	viper.SetDefault("UserAgent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
 
 	err := viper.ReadInConfig()
