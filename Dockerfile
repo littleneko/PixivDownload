@@ -12,15 +12,15 @@ RUN go mod download
 ADD pkg ./pkg
 COPY main.go ./
 
-RUN go build -o pixiv-dl
+RUN go build -o /pixiv-dl
 
 ## Deploy
-FROM ubuntu:latest
+FROM ubuntu:jammy
 
 RUN apt update && apt install ca-certificates -y && update-ca-certificates
 
-WORKDIR /pixivdl
+WORKDIR /
 
-COPY --from=build /app/pixiv-dl pixiv-dl
+COPY --from=build /pixiv-dl /pixiv-dl
 
-ENTRYPOINT ["/pixivdl/pixiv-dl"]
+ENTRYPOINT ["/pixiv-dl"]

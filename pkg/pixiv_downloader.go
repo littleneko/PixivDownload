@@ -14,9 +14,9 @@ import (
 const BookmarksPageLimit = 48
 
 type Worker struct {
-	conf   *Config
-	db     PixivDB
-	client *PixivClient
+	conf      *Config
+	illustMgr IllustInfoManager
+	client    *PixivClient
 }
 
 func (w *Worker) retry(workFunc func() bool) {
@@ -45,12 +45,12 @@ type PixivBookmarksWorker struct {
 	userBlockListFilter map[PixivIDType]struct{}
 }
 
-func NewPixivBookmarksWorker(conf *Config, db PixivDB, workChan chan<- *BookmarkWork) *PixivBookmarksWorker {
+func NewPixivBookmarksWorker(conf *Config, illustMgr IllustInfoManager, workChan chan<- *BookmarkWork) *PixivBookmarksWorker {
 	worker := PixivBookmarksWorker{
 		Worker: Worker{
-			conf:   conf,
-			db:     db,
-			client: NewPixivClient(conf.Cookie, conf.UserAgent, conf.ParseTimeoutMs),
+			conf:      conf,
+			illustMgr: illustMgr,
+			client:    NewPixivClient(conf.Cookie, conf.UserAgent, conf.ParseTimeoutMs),
 		},
 		workChan:            workChan,
 		offset:              0,
@@ -134,7 +134,7 @@ func (pbw *PixivBookmarksWorker) checkIllustExist(work *BookmarkWork) (bool, err
 	exist := false
 	err := Retry(func() error {
 		var err error
-		exist, err = pbw.db.CheckIllust(string(work.Id), work.PageCount)
+		exist, err = pbw.illustMgr.CheckIllust(string(work.Id), work.PageCount)
 		return err
 	}, 3)
 	return exist, err
@@ -168,12 +168,13 @@ type IllustInfoFetchWorker struct {
 	illustChan chan<- *Illust
 }
 
-func NewIllustInfoFetchWorker(conf *Config, db PixivDB, workChan <-chan *BookmarkWork, illustChan chan<- *Illust) IllustInfoFetchWorker {
+func NewIllustInfoFetchWorker(conf *Config, illustMgr IllustInfoManager, workChan <-chan *BookmarkWork, illustChan chan<- *Illust) IllustInfoFetchWorker {
 	return IllustInfoFetchWorker{
 		Worker: Worker{
-			conf:   conf,
-			client: NewPixivClient(conf.Cookie, conf.UserAgent, conf.ParseTimeoutMs),
-			db:     db},
+			conf:      conf,
+			illustMgr: illustMgr,
+			client:    NewPixivClient(conf.Cookie, conf.UserAgent, conf.ParseTimeoutMs),
+		},
 		workChan:   workChan,
 		illustChan: illustChan,
 	}
@@ -215,12 +216,13 @@ type IllustDownloadWorker struct {
 	illustChan <-chan *Illust
 }
 
-func NewIllustDownloadWorker(conf *Config, db PixivDB, illustChan <-chan *Illust) IllustDownloadWorker {
+func NewIllustDownloadWorker(conf *Config, illustMgr IllustInfoManager, illustChan <-chan *Illust) IllustDownloadWorker {
 	return IllustDownloadWorker{
 		Worker: Worker{
-			conf:   conf,
-			client: NewPixivClient(conf.Cookie, conf.UserAgent, conf.DownloadTimeoutMs),
-			db:     db},
+			conf:      conf,
+			illustMgr: illustMgr,
+			client:    NewPixivClient(conf.Cookie, conf.UserAgent, conf.DownloadTimeoutMs),
+		},
 		illustChan: illustChan,
 	}
 }
@@ -262,9 +264,9 @@ func (w *IllustDownloadWorker) writeFile(fileName string, data []byte) error {
 	return os.WriteFile(fileName, data, 0644)
 }
 
-func (w *IllustDownloadWorker) writeDB(illust *Illust, data []byte, fileName string) error {
+func (w *IllustDownloadWorker) saveIllustInfo(illust *Illust, data []byte, fileName string) error {
 	return Retry(func() error {
-		return w.db.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
+		return w.illustMgr.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
 	}, 3)
 }
 
@@ -287,7 +289,7 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *Illust) {
 			return false
 		}
 
-		err = w.writeDB(illust, data, fileName)
+		err = w.saveIllustInfo(illust, data, fileName)
 		if err != nil {
 			log.Errorf("[IllustDownloadWorker] Failed to write DB, retry, %s, msg: %s", illust.DescriptionString(), err)
 			return false
@@ -297,16 +299,16 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *Illust) {
 	})
 }
 
-func Start(conf *Config, db PixivDB) {
+func Start(conf *Config, illustMgr IllustInfoManager) {
 	workChan := make(chan *BookmarkWork, 100)
 	illustChan := make(chan *Illust, 100)
 
-	bookmarksFetchWorker := NewPixivBookmarksWorker(conf, db, workChan)
+	bookmarksFetchWorker := NewPixivBookmarksWorker(conf, illustMgr, workChan)
 	bookmarksFetchWorker.Run()
 
-	illustFetchWorker := NewIllustInfoFetchWorker(conf, db, workChan, illustChan)
+	illustFetchWorker := NewIllustInfoFetchWorker(conf, illustMgr, workChan, illustChan)
 	illustFetchWorker.Run()
 
-	illustDownloadWorker := NewIllustDownloadWorker(conf, db, illustChan)
+	illustDownloadWorker := NewIllustDownloadWorker(conf, illustMgr, illustChan)
 	illustDownloadWorker.Run()
 }
