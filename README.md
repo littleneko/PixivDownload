@@ -46,9 +46,9 @@ by '_').
 docker run \
  --env=PIXIV_USERID=123456 \
  --env=PIXIV_COOKIE=PHPSESSID=XXX \
- --volume=pixiv/database:/database
- --volume=pixiv/illust:/illust
- pixiv-dl:latest
+ --volume=/path/to/your/database:/pixivdl/database
+ --volume=/path/to/your/illust:/pixivdl/illust
+ littleneko/pixiv-dl:latest
 ```
 
 ## TODO

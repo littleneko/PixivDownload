@@ -1,8 +1,8 @@
 LogPath = "log"
 LogLevel = "INFO"
-DownloadPath = "illust"
 DatabaseType = "sqlite"
 SqlitePath = "database"
+DownloadPath = "illust"
 FileNamePattern = "{user_id}_{user}/{id}_{title}"
 
 UserId = "123456"
