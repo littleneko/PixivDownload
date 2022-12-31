@@ -1,22 +1,25 @@
 package pkg
 
 import (
+	"math"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"math"
 )
 
 type Config struct {
-	LogToFile           bool
-	LogPath             string
-	LogLevel            string
-	DatabaseType        string
-	SqlitePath          string
-	DownloadPath        string
-	FileNamePattern     string
-	UserId              string
-	Cookie              string
-	UserAgent           string
+	LogToFile       bool
+	LogPath         string
+	LogLevel        string
+	DatabaseType    string
+	SqlitePath      string
+	DownloadPath    string
+	FileNamePattern string
+
+	UserId    string
+	Cookie    string
+	UserAgent string
+
 	ScanIntervalSec     uint32
 	RetryIntervalSec    uint32
 	MaxRetryTimes       uint32
@@ -24,9 +27,11 @@ type Config struct {
 	DownloadWorkerCount int
 	ParseTimeoutMs      int32
 	DownloadTimeoutMs   int32
-	Proxy               string
-	UserIdWhiteList     []string
-	UserIdBlockList     []string
+
+	UserIdWhiteList []string
+	UserIdBlockList []string
+
+	Proxy string
 }
 
 func GetConfig(file string) *Config {
@@ -51,8 +56,11 @@ func GetConfig(file string) *Config {
 	viper.SetDefault("LogPath", "log")
 	viper.SetDefault("LogLevel", "INFO")
 	viper.SetDefault("DatabaseType", "sqlite")
-	viper.SetDefault("SqlitePath", "database")
-	viper.SetDefault("DownloadPath", "illust")
+	viper.SetDefault("SqlitePath", "storage")
+	viper.SetDefault("DownloadPath", "pixiv")
+
+	viper.SetDefault("UserAgent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+
 	viper.SetDefault("ScanIntervalSec", 3600)
 	viper.SetDefault("RetryIntervalSec", 60)
 	viper.SetDefault("MaxRetryTimes", math.MaxUint32)
@@ -60,7 +68,6 @@ func GetConfig(file string) *Config {
 	viper.SetDefault("DownloadWorkerCount", 10)
 	viper.SetDefault("ParseTimeoutMs", 5000)
 	viper.SetDefault("DownloadTimeoutMs", 60000)
-	viper.SetDefault("UserAgent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
 
 	err := viper.ReadInConfig()
 	if err != nil {
