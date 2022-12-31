@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"os"
+	"strings"
 	"time"
 )
 
@@ -24,4 +25,14 @@ func CheckAndMkdir(path string) error {
 		return os.MkdirAll(path, 0755)
 	}
 	return nil
+}
+
+var illegalFileNameChar = [...]string{"*", "\"", "<", ">", "?", "\\", "|", "/", ":"}
+
+func StandardizeFileName(name string) string {
+	newName := name
+	for _, c := range illegalFileNameChar {
+		newName = strings.Replace(newName, c, "_", -1)
+	}
+	return newName
 }

@@ -22,8 +22,8 @@ type Config struct {
 	MaxRetryTimes       uint32
 	ParserWorkerCount   int
 	DownloadWorkerCount int
-	ParseTimeoutMs      int
-	DownloadTimeoutMs   int
+	ParseTimeoutMs      int32
+	DownloadTimeoutMs   int32
 	Proxy               string
 	UserIdWhiteList     []string
 	UserIdBlockList     []string
