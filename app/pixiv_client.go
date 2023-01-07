@@ -1,4 +1,4 @@
-package pkg
+package app
 
 import (
 	"encoding/json"
@@ -42,16 +42,16 @@ func NewPixivClient(cookie string, userAgent string, timeoutMs int32) *PixivClie
 }
 
 func NewPixivClientWithHeader(header map[string]string, timeoutMs int32) *PixivClient {
-	pc := PixivClient{
+	pc := &PixivClient{
 		client: &http.Client{
 			Timeout: time.Duration(timeoutMs) * time.Millisecond,
 		},
 		header: header,
 	}
-	return &pc
+	return pc
 }
 
-func (p *PixivClient) request(url string, refer string) (*http.Response, error) {
+func (p *PixivClient) getRaw(url string, refer string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Referer", refer)
 	for k, v := range p.header {
@@ -71,8 +71,8 @@ func (p *PixivClient) request(url string, refer string) (*http.Response, error) 
 	return resp, nil
 }
 
-func (p *PixivClient) getPixiv(url string, refer string) (*PixivResponse, error) {
-	resp, err := p.request(url, refer)
+func (p *PixivClient) getPixivResp(url string, refer string) (*PixivResponse, error) {
+	resp, err := p.getRaw(url, refer)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (p *PixivClient) getPixiv(url string, refer string) (*PixivResponse, error)
 	return &jResp, nil
 }
 
-func (p *PixivClient) getBookmarksUrl(uid string, offset int32, limit int32) string {
+func (p *PixivClient) genBookmarksUrl(uid string, offset int32, limit int32) string {
 	params := url.Values{}
 	params.Set("tag", "")
 	params.Set("offset", strconv.FormatInt(int64(offset), 10))
@@ -105,9 +105,9 @@ func (p *PixivClient) getBookmarksUrl(uid string, offset int32, limit int32) str
 }
 
 func (p *PixivClient) GetBookmarks(uid string, offset int32, limit int32) (*BookmarksBody, error) {
-	bUrl := p.getBookmarksUrl(uid, offset, limit)
+	bUrl := p.genBookmarksUrl(uid, offset, limit)
 	refer := fmt.Sprintf(BookmarksReferUrl, uid)
-	resp, err := p.getPixiv(bUrl, refer)
+	resp, err := p.getPixivResp(bUrl, refer)
 	if err != nil {
 		return nil, err
 	}
@@ -120,38 +120,90 @@ func (p *PixivClient) GetBookmarks(uid string, offset int32, limit int32) (*Book
 	return &bmBody, nil
 }
 
-func (p *PixivClient) GetIllustInfo(illustId PixivIDType) ([]*Illust, error) {
+func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*IllustInfo, error) {
 	illust, err := p.getIllustBasicInfo(illustId)
 	if err != nil {
 		return nil, err
 	}
-	if illust.PageCount == 1 {
-		return []*Illust{illust}, nil
+	if illust.PageCount == 1 || onlyP0 {
+		return []*IllustInfo{illust}, nil
 	} else {
 		return p.getIllustAllPages(illust)
 	}
 }
 
-func (p *PixivClient) getIllustBasicInfo(illustId PixivIDType) (*Illust, error) {
+func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) {
 	illustUrl := fmt.Sprintf(IllustUrl, illustId)
 	refer := fmt.Sprintf(IllustReferUrl, illustId)
-	iResp, err := p.getPixiv(illustUrl, refer)
+	iResp, err := p.getPixivResp(illustUrl, refer)
 	if err != nil {
 		return nil, err
 	}
 
-	var illust Illust
+	var illust struct {
+		*IllustInfo
+		RawTags json.RawMessage `json:"tags"`
+	}
 	err = json.Unmarshal(iResp.Body, &illust)
 	if err != nil {
 		return nil, ErrFailedUnmarshal
 	}
-	return &illust, nil
+
+	/**
+	The json format of tags:
+
+	"tags": {
+	            "authorId": "3494650",
+	            "isLocked": false,
+	            "tags": [
+	                {
+	                    "tag": "R-18",
+	                    "locked": true,
+	                    "deletable": false,
+	                    "userId": "3494650",
+	                    "userName": "はすね"
+	                },
+	                {
+	                    "tag": "小悪魔",
+	                    "locked": true,
+	                    "deletable": false,
+	                    "userId": "3494650",
+	                    "translation": {
+	                        "en": "小恶魔"
+	                    },
+	                    "userName": "はすね"
+	                },
+	            ],
+	            "writable": true
+	        },
+	*/
+
+	var tags struct {
+		Tags []struct {
+			Tag string `json:"tag"`
+		} `json:"tags"`
+	}
+	err = json.Unmarshal(illust.RawTags, &tags)
+	if err != nil {
+		return nil, ErrFailedUnmarshal
+	}
+
+	r18 := false
+	for _, tag := range tags.Tags {
+		if tag.Tag == "R-18" {
+			r18 = true
+		}
+		illust.Tags = append(illust.Tags, tag.Tag)
+	}
+	illust.R18 = r18
+
+	return illust.IllustInfo, nil
 }
 
-func (p *PixivClient) getIllustAllPages(seed *Illust) ([]*Illust, error) {
+func (p *PixivClient) getIllustAllPages(seed *IllustInfo) ([]*IllustInfo, error) {
 	illustUrl := fmt.Sprintf(IllustPagesUrl, seed.Id)
 	refer := fmt.Sprintf(IllustReferUrl, seed.Id)
-	iResp, err := p.getPixiv(illustUrl, refer)
+	iResp, err := p.getPixivResp(illustUrl, refer)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +217,7 @@ func (p *PixivClient) getIllustAllPages(seed *Illust) ([]*Illust, error) {
 		return nil, ErrFailedUnmarshal
 	}
 
-	var illusts []*Illust
+	var illusts []*IllustInfo
 	for idx := range illustPageBody {
 		illust := *seed
 		illust.CurPage = idx
@@ -175,8 +227,8 @@ func (p *PixivClient) getIllustAllPages(seed *Illust) ([]*Illust, error) {
 	return illusts, nil
 }
 
-func (p *PixivClient) DownloadIllust(url string) ([]byte, error) {
-	resp, err := p.request(url, IllustDownloadReferUrl)
+func (p *PixivClient) getIllustData(url string) ([]byte, error) {
+	resp, err := p.getRaw(url, IllustDownloadReferUrl)
 	if err != nil {
 		return nil, err
 	}

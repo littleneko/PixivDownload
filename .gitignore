@@ -17,9 +17,9 @@
 .DS_Store
 .idea/
 
-database/
+storage/
 pixiv/
 illust/
 log/
-pixiv.toml
+pixiv.yaml
 pixiv-dl
