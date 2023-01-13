@@ -1,0 +1,16 @@
+LogPath = "log"
+LogLevel = "INFO"
+DataPath = "pixiv"
+DatabaseType = "sqlite"
+SqlitePath = "database"
+
+UserId = "123456"
+Cookie = "PHPSESSID=xxxx"
+UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+ScanInterval = 3600
+RetryInterval = 5
+ParserWorkerCount = 5
+DownloadWorkerCount = 20
+FileNamePattern = "{user_id}_{user}/{id}_{title}"
+UserIdWhiteList = ["123"]
+UserIdBlockList = []
