@@ -1,6 +1,12 @@
 package app
 
 type PixivDlOptions struct {
+	Cookie    string `mapstructure:"cookie"`
+	UserAgent string `mapstructure:"user-agent"`
+	Proxy     string `mapstructure:"proxy"`
+
+	ServiceMode bool `mapstructure:"service-mode"`
+
 	DatabaseType    string `mapstructure:"database-type"`
 	SqlitePath      string `mapstructure:"sqlite-path"`
 	DownloadPath    string `mapstructure:"download-path"`
@@ -14,20 +20,17 @@ type PixivDlOptions struct {
 	ParseTimeoutMs    int32 `mapstructure:"parse-timeout-ms"`
 	DownloadTimeoutMs int32 `mapstructure:"download-timeout-ms"`
 
+	DownloadBookmarksUserIds []string `mapstructure:"download-bookmarks-uids"`
+	DownloadFollowingUserIds []string `mapstructure:"download-following-uids"`
+	DownloadArtistUserIds    []string `mapstructure:"download-artist-uids"`
+	DownloadIllustIds        []string `mapstructure:"download-illust-ids"`
+
 	UserWhiteList []string `mapstructure:"user-white-list"`
 	UserBlockList []string `mapstructure:"user-block-list"`
 
-	Cookie    string `mapstructure:"cookie"`
-	UserAgent string `mapstructure:"user-agent"`
-
-	BookmarksUserIds  []string `mapstructure:"bookmarks-uids"`
-	FollowingUserIds  []string `mapstructure:"following-uids"`
-	DownloadUserIds   []string `mapstructure:"artist-uids"`
-	DownloadIllustIds []string `mapstructure:"illust-ids"`
-
-	NoR18  bool `mapstructure:"no-r18"`
-	OnlyP0 bool `mapstructure:"only-p0"`
-
-	HttpProxy  string `mapstructure:"http-proxy"`
-	HttpsProxy string `mapstructure:"https-proxy"`
+	NoR18      bool `mapstructure:"no-r18"`
+	OnlyP0     bool `mapstructure:"only-p0"`
+	BookmarkGt int  `mapstructure:"bookmark-gt"`
+	LikeGt     int  `mapstructure:"like-gt"`
+	PixelGt    int  `mapstructure:"pixel-gt"`
 }

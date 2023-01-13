@@ -1,331 +1,227 @@
 package app
 
 import (
-	"crypto/sha1"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
-
 	log "github.com/sirupsen/logrus"
+	"time"
 )
 
-const BookmarksPageLimit = 48
-
-type Worker struct {
-	options   *PixivDlOptions
-	illustMgr IllustInfoManager
-	client    *PixivClient
+type PixivDownloader interface {
+	Start()
+	Close()
 }
 
-func (w *Worker) retry(workFunc func() bool) {
-	var retryTime int32 = 0
+// IllustDownloader download the illust by pid
+type IllustDownloader struct {
+	illustInfoFetchWorker *IllustInfoFetchWorker
+	illustDownloadWorker  *IllustDownloadWorker
+
+	options *PixivDlOptions
+
+	basicIllustChan chan *BasicIllustInfo
+	fullIllustChan  chan *FullIllustInfo
+}
+
+func NewIllustDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *IllustDownloader {
+	basicIllustChan := make(chan *BasicIllustInfo, 50)
+	fullIllustChan := make(chan *FullIllustInfo, 100)
+
+	downloader := &IllustDownloader{
+		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:               options,
+		basicIllustChan:       basicIllustChan,
+		fullIllustChan:        fullIllustChan,
+	}
+	return downloader
+}
+
+func (d *IllustDownloader) waitDone(illustCnt uint64) {
 	for {
-		ok := workFunc()
-		if ok {
+		if d.illustInfoFetchWorker.GetConsumeCnt() == illustCnt &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
+			d.illustInfoFetchWorker.ResetCnt()
+			d.illustDownloadWorker.ResetCnt()
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (d *IllustDownloader) Start() {
+	if len(d.options.DownloadIllustIds) == 0 {
+		return
+	}
+
+	d.illustInfoFetchWorker.Run()
+	d.illustDownloadWorker.Run()
+
+	for {
+		for _, pid := range d.options.DownloadIllustIds {
+			d.basicIllustChan <- &BasicIllustInfo{
+				Id:        PixivID(pid),
+				PageCount: 1,
+			}
+		}
+
+		d.waitDone(uint64(len(d.options.DownloadIllustIds)))
+		if !d.options.ServiceMode {
 			break
 		}
-		if retryTime >= w.options.MaxRetries {
+		duration := time.Duration(d.options.ScanIntervalSec) * time.Second
+		log.Infof("[IllustDownloader] wait for next round after %s", duration)
+		time.Sleep(duration)
+	}
+}
+
+func (d *IllustDownloader) Close() {
+	close(d.basicIllustChan)
+	close(d.fullIllustChan)
+}
+
+// BookmarksDownloader download the illust of users bookmarks
+type BookmarksDownloader struct {
+	bookmarksWorker       *BookmarksWorker
+	illustInfoFetchWorker *IllustInfoFetchWorker
+	illustDownloadWorker  *IllustDownloadWorker
+
+	options *PixivDlOptions
+
+	uidChan         chan PixivID
+	basicIllustChan chan *BasicIllustInfo
+	fullIllustChan  chan *FullIllustInfo
+}
+
+func NewBookmarksDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *BookmarksDownloader {
+	uidChan := make(chan PixivID, 10)
+	basicIllustChan := make(chan *BasicIllustInfo, 50)
+	fullIllustChan := make(chan *FullIllustInfo, 100)
+
+	downloader := &BookmarksDownloader{
+		bookmarksWorker:       NewBookmarksWorker(options, illustMgr, uidChan, basicIllustChan),
+		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:               options,
+		uidChan:               uidChan,
+		basicIllustChan:       basicIllustChan,
+		fullIllustChan:        fullIllustChan,
+	}
+	return downloader
+}
+
+func (d *BookmarksDownloader) waitDone(userCnt uint64) {
+	for {
+		if d.bookmarksWorker.GetConsumeCnt() == userCnt &&
+			d.illustInfoFetchWorker.GetConsumeCnt() == d.bookmarksWorker.GetProduceCnt() &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
+			d.bookmarksWorker.ResetCnt()
+			d.illustInfoFetchWorker.ResetCnt()
+			d.illustDownloadWorker.ResetCnt()
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (d *BookmarksDownloader) Start() {
+	if len(d.options.DownloadBookmarksUserIds) == 0 {
+		return
+	}
+
+	d.bookmarksWorker.Run()
+	d.illustInfoFetchWorker.Run()
+	d.illustDownloadWorker.Run()
+
+	for {
+		for _, uid := range d.options.DownloadBookmarksUserIds {
+			d.uidChan <- PixivID(uid)
+		}
+
+		d.waitDone(uint64(len(d.options.DownloadBookmarksUserIds)))
+		if !d.options.ServiceMode {
 			break
 		}
-		retryTime++
-		time.Sleep(time.Duration(w.options.RetryBackoffMs) * time.Microsecond)
+		duration := time.Duration(d.options.ScanIntervalSec) * time.Second
+		log.Infof("[BookmarksDownloader] wait for next round after %s", duration)
+		time.Sleep(duration)
 	}
 }
 
-type BookmarksWorker struct {
-	*Worker
-
-	workChan chan<- *BasicIllustInfo
-
-	userWhiteListFilter map[PixivID]struct{}
-	userBlockListFilter map[PixivID]struct{}
+func (d *BookmarksDownloader) Close() {
+	close(d.uidChan)
+	close(d.basicIllustChan)
+	close(d.fullIllustChan)
 }
 
-func NewPixivBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager, workChan chan<- *BasicIllustInfo) *BookmarksWorker {
-	worker := &BookmarksWorker{
-		Worker: &Worker{
-			options:   options,
-			illustMgr: illustMgr,
-			client:    NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs),
-		},
-		workChan:            workChan,
-		userWhiteListFilter: map[PixivID]struct{}{},
-		userBlockListFilter: map[PixivID]struct{}{},
-	}
+// ArtistDownloader download all the illust of users
+type ArtistDownloader struct {
+	artistWorker          *ArtistWorker
+	illustInfoFetchWorker *IllustInfoFetchWorker
+	illustDownloadWorker  *IllustDownloadWorker
 
-	for _, uid := range options.UserWhiteList {
-		worker.userWhiteListFilter[PixivID(uid)] = struct{}{}
-	}
-	for _, uid := range options.UserBlockList {
-		worker.userBlockListFilter[PixivID(uid)] = struct{}{}
-	}
-	return worker
+	options *PixivDlOptions
+
+	uidChan         chan PixivID
+	basicIllustChan chan *BasicIllustInfo
+	fullIllustChan  chan *FullIllustInfo
 }
 
-func (pbw *BookmarksWorker) Run() {
-	go pbw.ProcessBookmarks()
+func NewArtistDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *ArtistDownloader {
+	uidChan := make(chan PixivID, 10)
+	basicIllustChan := make(chan *BasicIllustInfo, 50)
+	fullIllustChan := make(chan *FullIllustInfo, 100)
+
+	downloader := &ArtistDownloader{
+		artistWorker:          NewArtistWorker(options, illustMgr, uidChan, basicIllustChan),
+		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:               options,
+		uidChan:               uidChan,
+		basicIllustChan:       basicIllustChan,
+		fullIllustChan:        fullIllustChan,
+	}
+	return downloader
 }
 
-func (pbw *BookmarksWorker) ProcessBookmarks() {
+func (d *ArtistDownloader) waitDone(userCnt uint64) {
 	for {
-		for _, uid := range pbw.options.BookmarksUserIds {
-			pbw.ProcessUserBookmarks(uid)
+		if d.artistWorker.GetConsumeCnt() == userCnt &&
+			d.illustInfoFetchWorker.GetConsumeCnt() == d.artistWorker.GetProduceCnt() &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
+			d.artistWorker.ResetCnt()
+			d.illustInfoFetchWorker.ResetCnt()
+			d.illustDownloadWorker.ResetCnt()
+			return
 		}
-		log.Infof("[BookmarkFetchWorker] End scan all bookmarks, wait for next round")
-		time.Sleep(time.Duration(pbw.options.ScanIntervalSec) * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
 
-func (pbw *BookmarksWorker) ProcessUserBookmarks(uid string) {
-	bookmarksFetch := NewBookmarksFetcher(pbw.client, uid, BookmarksPageLimit)
+func (d *ArtistDownloader) Start() {
+	if len(d.options.DownloadArtistUserIds) == 0 {
+		return
+	}
+
+	d.artistWorker.Run()
+	d.illustInfoFetchWorker.Run()
+	d.illustDownloadWorker.Run()
+
 	for {
-		if !bookmarksFetch.HasMorePage() {
-			log.Infof("[BookmarkFetchWorker] End scan all bookmarks for uid '%s'", uid)
+		for _, uid := range d.options.DownloadArtistUserIds {
+			d.uidChan <- PixivID(uid)
+		}
+
+		d.waitDone(uint64(len(d.options.DownloadArtistUserIds)))
+		if !d.options.ServiceMode {
 			break
 		}
-		pbw.retry(func() bool {
-			bmBody, err := bookmarksFetch.GetNextPageBookmarks()
-			if err == ErrNotFound || err == ErrFailedUnmarshal {
-				log.Warningf("[BookmarkFetchWorker] Skip bookmarks page, offset: %d, msg: %s", bookmarksFetch.CurOffset(), err)
-				return true
-			}
-			if err != nil {
-				log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", bookmarksFetch.CurOffset(), err)
-				return false
-			}
-			err = pbw.writeToQueue(bmBody)
-			if err != nil {
-				log.Warningf("[BookmarkFetchWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", bookmarksFetch.CurOffset(), err)
-				return false
-			}
-			log.Infof("[BookmarkFetchWorker] Success get bookmarks, offset: %d", bookmarksFetch.CurOffset())
-			return true
-		})
-		bookmarksFetch.MoveToNextPage()
+		duration := time.Duration(d.options.ScanIntervalSec) * time.Second
+		log.Infof("[ArtistDownloader] wait for next round after %s", duration)
+		time.Sleep(duration)
 	}
 }
 
-func (pbw *BookmarksWorker) filter(work *BasicIllustInfo) bool {
-	if len(pbw.userWhiteListFilter) > 0 {
-		_, ok := pbw.userWhiteListFilter[work.UserId]
-		if !ok {
-			log.Debugf("[BookmarkFetchWorker] Skip illust by UserWhiteList, %s", work.DigestString())
-			return true
-		}
-	}
-	if len(pbw.userBlockListFilter) > 0 {
-		_, ok := pbw.userBlockListFilter[work.UserId]
-		if ok {
-			log.Infof("[BookmarkFetchWorker] Skip illust by UserBlockList, %s", work.DigestString())
-			return true
-		}
-	}
-	return false
-}
-
-func (pbw *BookmarksWorker) checkIllustExist(work *BasicIllustInfo) (bool, error) {
-	exist := false
-	err := Retry(func() error {
-		var err error
-		exist, err = pbw.illustMgr.CheckIllust(string(work.Id), work.PageCount)
-		return err
-	}, 3)
-	return exist, err
-}
-
-func (pbw *BookmarksWorker) writeToQueue(bmBody *BookmarksInfo) error {
-	for idx := range bmBody.Works {
-		work := &bmBody.Works[idx]
-		if pbw.filter(work) {
-			continue
-		}
-
-		exist, err := pbw.checkIllustExist(work)
-		if err != nil {
-			log.Errorf("[BookmarkFetchWorker] Failed to check illust exist, illust info: %s, msg: %s", work.DigestString(), err)
-			return err
-		}
-		if exist {
-			log.Debugf("[BookmarkFetchWorker] Skip exist illust, illust info: %s", work.DigestString())
-		} else {
-			log.Infof("[BookmarkFetchWorker] Success get bookmark illust info: %s", work.DigestString())
-			pbw.workChan <- work
-		}
-	}
-	return nil
-}
-
-type IllustInfoFetchWorker struct {
-	*Worker
-	workChan   <-chan *BasicIllustInfo
-	illustChan chan<- *IllustInfo
-}
-
-func NewIllustInfoFetchWorker(options *PixivDlOptions, illustMgr IllustInfoManager, workChan <-chan *BasicIllustInfo, illustChan chan<- *IllustInfo) *IllustInfoFetchWorker {
-	worker := &IllustInfoFetchWorker{
-		Worker: &Worker{
-			options:   options,
-			illustMgr: illustMgr,
-			client:    NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs),
-		},
-		workChan:   workChan,
-		illustChan: illustChan,
-	}
-	return worker
-}
-
-func (w *IllustInfoFetchWorker) Run() {
-	for i := int32(0); i < w.options.ParseParallel; i++ {
-		go func() {
-			for work := range w.workChan {
-				w.processIllustInfo(work)
-			}
-			log.Info("[IllustInfoFetchWorker] exit")
-		}()
-	}
-}
-
-func (w *IllustInfoFetchWorker) processIllustInfo(work *BasicIllustInfo) {
-	w.retry(func() bool {
-		illusts, err := w.client.GetIllustInfo(work.Id, w.options.OnlyP0)
-		if err == ErrNotFound || err == ErrFailedUnmarshal {
-			log.Warningf("[IllustInfoFetchWorker] Skip illust: %s, msg: %s", work.DigestString(), err)
-			return true
-		}
-		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info: %s , msg: %s", work.DigestString(), err)
-			return false
-		}
-		log.Infof("[IllustInfoFetchWorker] Success get illust info: %s", illusts[0].DigestString())
-		for idx := range illusts {
-			illustP := illusts[idx]
-			if w.options.NoR18 && illustP.R18 {
-				log.Infof("[IllustInfoFetchWorker] Skip R18 illust: %s", illustP.DigestString())
-				continue
-			}
-			w.illustChan <- illustP
-		}
-		return true
-	})
-}
-
-type IllustDownloadWorker struct {
-	*Worker
-	illustChan <-chan *IllustInfo
-}
-
-func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *IllustInfo) *IllustDownloadWorker {
-	worker := &IllustDownloadWorker{
-		Worker: &Worker{
-			options:   options,
-			illustMgr: illustMgr,
-			client:    NewPixivClient(options.Cookie, options.UserAgent, options.DownloadTimeoutMs),
-		},
-		illustChan: illustChan,
-	}
-	return worker
-}
-
-func (w *IllustDownloadWorker) Run() {
-	for i := int32(0); i < w.options.DownloadParallel; i++ {
-		go func() {
-			for illust := range w.illustChan {
-				w.DownloadIllust(illust)
-			}
-			log.Info("[IllustDownloadWorker] exit")
-		}()
-	}
-}
-
-func FormatFileName(illust *IllustInfo, pattern string) string {
-	fileName := filepath.Base(illust.Urls.Original)
-	if len(pattern) == 0 {
-		return fileName
-	}
-	extName := filepath.Ext(fileName)
-	pid := fileName[:len(fileName)-len(extName)]
-
-	var newName = pattern
-	newName = strings.Replace(newName, "{id}", pid, -1)
-	newName = strings.Replace(newName, "{title}", StandardizeFileName(illust.Title), -1)
-	newName = strings.Replace(newName, "{user_id}", string(illust.UserId), -1)
-	newName = strings.Replace(newName, "{user}", StandardizeFileName(illust.UserName), -1)
-	newName += extName
-	return newName
-}
-
-func (w *IllustDownloadWorker) writeFile(fileName string, data []byte) error {
-	dirName := filepath.Dir(fileName)
-	err := CheckAndMkdir(dirName)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(fileName, data, 0644)
-}
-
-func (w *IllustDownloadWorker) saveIllustInfo(illust *IllustInfo, data []byte, fileName string) error {
-	return Retry(func() error {
-		return w.illustMgr.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
-	}, 3)
-}
-
-func (w *IllustDownloadWorker) DownloadIllust(illust *IllustInfo) {
-	fileName := FormatFileName(illust, w.options.FilenamePattern)
-	fullFileName := filepath.Join(w.options.DownloadPath, fileName)
-	w.retry(func() bool {
-		start := time.Now()
-		data, err := w.client.getIllustData(illust.Urls.Original)
-		if err == ErrNotFound || err == ErrFailedUnmarshal {
-			return true
-		}
-		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to download illust and retry, %s, url: %s, msg: %s", illust.DigestString(), illust.Urls.Original, err)
-			return false
-		}
-
-		err = w.writeFile(fullFileName, data)
-		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to write illust and retry, %s, url: %s, msg: %s", illust.DigestString(), illust.Urls.Original, err)
-			return false
-		}
-
-		err = w.saveIllustInfo(illust, data, fileName)
-		if err != nil {
-			log.Errorf("[IllustDownloadWorker] Failed to save illust info and retry, %s, msg: %s", illust.DigestString(), err)
-			return false
-		}
-		elapsed := time.Since(start)
-		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, elapsed: %s", illust.DigestString(), fullFileName, illust.Urls.Original, elapsed)
-		return true
-	})
-}
-
-func Start(options *PixivDlOptions, illustMgr IllustInfoManager) error {
-	workChan := make(chan *BasicIllustInfo, 100)
-	illustChan := make(chan *IllustInfo, 100)
-
-	if len(options.DownloadIllustIds) > 0 {
-		go func() {
-			for _, pid := range options.DownloadIllustIds {
-				workChan <- &BasicIllustInfo{
-					Id: PixivID(pid),
-				}
-			}
-		}()
-	}
-
-	if len(options.BookmarksUserIds) > 0 {
-		bookmarksFetchWorker := NewPixivBookmarksWorker(options, illustMgr, workChan)
-		bookmarksFetchWorker.Run()
-	}
-
-	illustFetchWorker := NewIllustInfoFetchWorker(options, illustMgr, workChan, illustChan)
-	illustFetchWorker.Run()
-
-	illustDownloadWorker := NewIllustDownloadWorker(options, illustMgr, illustChan)
-	illustDownloadWorker.Run()
-
-	return nil
+func (d *ArtistDownloader) Close() {
+	close(d.uidChan)
+	close(d.basicIllustChan)
+	close(d.fullIllustChan)
 }

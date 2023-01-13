@@ -24,4 +24,4 @@ WORKDIR /
 
 COPY --from=build /pixiv-dl /pixiv-dl
 
-ENTRYPOINT ["/pixiv-dl download"]
+CMD ["/pixiv-dl", "download", "--service-mode"]

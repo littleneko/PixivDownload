@@ -11,6 +11,89 @@ import (
 	"time"
 )
 
+type PixivID string
+
+func (w *PixivID) UnmarshalJSON(data []byte) (err error) {
+	if zip, err := strconv.Atoi(string(data)); err == nil {
+		str := strconv.Itoa(zip)
+		*w = PixivID(str)
+		return nil
+	}
+	var str string
+	err = json.Unmarshal(data, &str)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(str), w)
+}
+
+type PixivResponse struct {
+	Error   bool            `json:"error"`
+	Message string          `json:"message"`
+	Body    json.RawMessage `json:"body"`
+}
+
+type UserInfo struct {
+	UserId      PixivID `json:"userId"`
+	UserName    string  `json:"userName"`
+	UserAccount string  `json:"userAccount"`
+}
+
+// BasicIllustInfo is the illust info get from users bookmarks or users artworks
+type BasicIllustInfo struct {
+	Id        PixivID `json:"id"`
+	Title     string  `json:"title"`
+	PageCount int32   `json:"pageCount"`
+	UserInfo
+}
+
+func (bi *BasicIllustInfo) DigestString() string {
+	return fmt.Sprintf("[id: %s, title: %s, uid: %s, uname: %s, pages: %d]", bi.Id, bi.Title, bi.UserId, bi.UserName, bi.PageCount)
+}
+
+type BookmarksInfo struct {
+	Total int32             `json:"total"`
+	Works []BasicIllustInfo `json:"works"`
+}
+
+type FollowingInfo struct {
+	Users []UserInfo `json:"users"`
+	Total int32      `json:"total"`
+}
+
+type Urls struct {
+	Mini     string `json:"mini"`
+	Thumb    string `json:"thumb"`
+	Small    string `json:"small"`
+	Regular  string `json:"regular"`
+	Original string `json:"original"`
+}
+
+type FullIllustInfo struct {
+	Id            PixivID   `json:"id"`
+	PageIdx       int       `json:"curPage"`
+	Title         string    `json:"title"`
+	Urls          Urls      `json:"urls"`
+	R18           bool      `json:"r18,omitempty"`
+	Tags          []string  `json:"tags,omitempty"`
+	Description   string    `json:"description"`
+	Width         int       `json:"width"`
+	Height        int       `json:"height"`
+	PageCount     int       `json:"pageCount"`
+	BookmarkCount int       `json:"bookmarkCount"`
+	LikeCount     int       `json:"likeCount"`
+	CommentCount  int       `json:"commentCount"`
+	ViewCount     int       `json:"viewCount"`
+	CreateDate    time.Time `json:"createDate"`
+	UploadDate    time.Time `json:"uploadDate"`
+	UserInfo
+}
+
+func (i *FullIllustInfo) DigestString() string {
+	return fmt.Sprintf("[id: %s, page: %d, title: %s, uid: %s, uname: %s, pageCnt: %d, R18: %v, bookmarkCnt: %d, likeCnt: %d]",
+		i.Id, i.PageIdx, i.Title, i.UserId, i.UserName, i.PageCount, i.R18, i.BookmarkCount, i.LikeCount)
+}
+
 var (
 	ErrNotFound        = errors.New("NotFound")
 	ErrFailedUnmarshal = errors.New("FailedUnmarshal")
@@ -162,7 +245,8 @@ func (p *PixivClient) GetFollowing(uid string, offset, limit int32) (*FollowingI
 	return &following, nil
 }
 
-func (p *PixivClient) GetUserIllusts(uid string) ([]*BasicIllustInfo, error) {
+// GetUserIllusts get all the illust pid of the user
+func (p *PixivClient) GetUserIllusts(uid string) ([]PixivID, error) {
 	allUrl := fmt.Sprintf(userAllIllustUrl, uid)
 	refer := fmt.Sprintf(userAllIllustReferUrl, uid)
 	resp, err := p.getPixivResp(allUrl, refer)
@@ -178,28 +262,26 @@ func (p *PixivClient) GetUserIllusts(uid string) ([]*BasicIllustInfo, error) {
 		return nil, ErrFailedUnmarshal
 	}
 
-	illusts := make([]*BasicIllustInfo, len(body.Illusts))
+	illusts := make([]PixivID, 0, len(body.Illusts))
 	for k, _ := range body.Illusts {
-		illusts = append(illusts, &BasicIllustInfo{
-			Id: PixivID(k),
-		})
+		illusts = append(illusts, PixivID(k))
 	}
 	return illusts, nil
 }
 
-func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*IllustInfo, error) {
+func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*FullIllustInfo, error) {
 	illust, err := p.getIllustBasicInfo(illustId)
 	if err != nil {
 		return nil, err
 	}
 	if illust.PageCount == 1 || onlyP0 {
-		return []*IllustInfo{illust}, nil
+		return []*FullIllustInfo{illust}, nil
 	} else {
 		return p.getIllustAllPages(illust)
 	}
 }
 
-func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) {
+func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*FullIllustInfo, error) {
 	illustUrl := fmt.Sprintf(illustInfoUrl, illustId)
 	refer := fmt.Sprintf(illustInfoReferUrl, illustId)
 	iResp, err := p.getPixivResp(illustUrl, refer)
@@ -208,7 +290,7 @@ func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) 
 	}
 
 	var illust struct {
-		*IllustInfo
+		*FullIllustInfo
 		RawTags json.RawMessage `json:"tags"`
 	}
 	err = json.Unmarshal(iResp.Body, &illust)
@@ -264,10 +346,10 @@ func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) 
 	}
 	illust.R18 = r18
 
-	return illust.IllustInfo, nil
+	return illust.FullIllustInfo, nil
 }
 
-func (p *PixivClient) getIllustAllPages(seed *IllustInfo) ([]*IllustInfo, error) {
+func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo, error) {
 	illustUrl := fmt.Sprintf(illustPagesUrl, seed.Id)
 	refer := fmt.Sprintf(illustInfoReferUrl, seed.Id)
 	iResp, err := p.getPixivResp(illustUrl, refer)
@@ -284,10 +366,10 @@ func (p *PixivClient) getIllustAllPages(seed *IllustInfo) ([]*IllustInfo, error)
 		return nil, ErrFailedUnmarshal
 	}
 
-	var illusts []*IllustInfo
+	var illusts []*FullIllustInfo
 	for idx := range illustPageBody {
 		illust := *seed
-		illust.CurPage = idx
+		illust.PageIdx = idx
 		illust.Urls = illustPageBody[idx].Urls
 		illusts = append(illusts, &illust)
 	}
@@ -338,6 +420,10 @@ func (bf *BookmarksFetcher) HasMorePage() bool {
 
 func (bf *BookmarksFetcher) GetNextPageBookmarks() (*BookmarksInfo, error) {
 	bmInfo, err := bf.client.GetBookmarks(bf.uid, bf.curOffset, bf.limit)
+	// mark this user as invalid user, it has no next page
+	if err == ErrNotFound {
+		bf.total = 0
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -345,4 +431,44 @@ func (bf *BookmarksFetcher) GetNextPageBookmarks() (*BookmarksInfo, error) {
 		bf.total = bmInfo.Total
 	}
 	return bmInfo, nil
+}
+
+type FollowingFetcher struct {
+	client    *PixivClient
+	uid       string
+	limit     int32
+	total     int32
+	curOffset int32
+}
+
+func NewFollowingFetcher(client *PixivClient, uid string, limit int32) *FollowingFetcher {
+	return &FollowingFetcher{
+		client:    client,
+		uid:       uid,
+		limit:     limit,
+		total:     -1,
+		curOffset: 0,
+	}
+}
+func (ff *FollowingFetcher) CurOffset() int32 {
+	return ff.curOffset
+}
+
+func (ff *FollowingFetcher) MoveToNextPage() {
+	ff.curOffset += ff.limit
+}
+
+func (ff *FollowingFetcher) HasMorePage() bool {
+	return ff.total == -1 || ff.curOffset < ff.total
+}
+
+func (ff *FollowingFetcher) GetNextPageFollowing() (*FollowingInfo, error) {
+	folInfo, err := ff.client.GetFollowing(ff.uid, ff.curOffset, ff.limit)
+	if err != nil {
+		return nil, err
+	}
+	if folInfo.Total > 0 {
+		ff.total = folInfo.Total
+	}
+	return folInfo, nil
 }

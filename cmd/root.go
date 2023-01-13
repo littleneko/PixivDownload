@@ -60,6 +60,8 @@ func init() {
 
 	rootCmd.PersistentFlags().String("log-path", "", "Log file path (default is stdout)")
 	rootCmd.PersistentFlags().String("log-level", "INFO", "Log level, choices: [DEBUG, INFO, WARNING, ERROR]")
+	rootCmd.PersistentFlags().String("cookie", "", "Your Cookies, only need the key-value 'PHPSESSID=abcxyz'")
+	rootCmd.PersistentFlags().String("user-agent", defaultUserAgent, "Http User-Agent header")
 	err := viper.BindPFlags(rootCmd.PersistentFlags())
 	cobra.CheckErr(err)
 
@@ -67,6 +69,7 @@ func init() {
 	cobra.CheckErr(err)
 
 	rootCmd.AddCommand(downloadCmd)
+	rootCmd.AddCommand(infoCmd)
 }
 
 // initConfig reads in config file and ENV variables if set.
