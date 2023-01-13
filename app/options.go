@@ -20,10 +20,10 @@ type PixivDlOptions struct {
 	Cookie    string `mapstructure:"cookie"`
 	UserAgent string `mapstructure:"user-agent"`
 
-	DownloadScope     []string `mapstructure:"download-scope"`
-	UserId            string   `mapstructure:"user-id"`
-	DownloadUserIds   []string `mapstructure:"download-user-ids"`
-	DownloadIllustIds []string `mapstructure:"download-illust-ids"`
+	BookmarksUserIds  []string `mapstructure:"bookmarks-uids"`
+	FollowingUserIds  []string `mapstructure:"following-uids"`
+	DownloadUserIds   []string `mapstructure:"artist-uids"`
+	DownloadIllustIds []string `mapstructure:"illust-ids"`
 
 	NoR18  bool `mapstructure:"no-r18"`
 	OnlyP0 bool `mapstructure:"only-p0"`

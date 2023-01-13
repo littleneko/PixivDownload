@@ -28,22 +28,32 @@ type PixivResponse struct {
 	Body    json.RawMessage `json:"body"`
 }
 
+type UserInfo struct {
+	UserId      PixivID `json:"userId"`
+	UserName    string  `json:"userName"`
+	UserAccount string  `json:"userAccount"`
+}
+
 // BasicIllustInfo is the illust info get from users bookmarks or users artworks
 type BasicIllustInfo struct {
 	Id        PixivID `json:"id"`
 	Title     string  `json:"title"`
-	UserId    PixivID `json:"userId"`
-	UserName  string  `json:"userName"`
 	PageCount int32   `json:"pageCount"`
+	UserInfo
 }
 
 func (bi *BasicIllustInfo) DigestString() string {
 	return fmt.Sprintf("[id: %s, title: %s, uid: %s, uname: %s, pages: %d]", bi.Id, bi.Title, bi.UserId, bi.UserName, bi.PageCount)
 }
 
-type BookmarksBody struct {
+type BookmarksInfo struct {
 	Total int32             `json:"total"`
 	Works []BasicIllustInfo `json:"works"`
+}
+
+type FollowingInfo struct {
+	Users []UserInfo `json:"users"`
+	Total int32      `json:"total"`
 }
 
 type Urls struct {
@@ -61,12 +71,10 @@ type IllustInfo struct {
 	Urls        Urls     `json:"urls"`
 	Tags        []string `json:"tags,omitempty"`
 	R18         bool     `json:"r18,omitempty"`
-	UserId      PixivID  `json:"userId"`
-	UserName    string   `json:"userName"`
-	UserAccount string   `json:"userAccount"`
 	CreatedDate string   `json:"createdDate"`
 	PageCount   int      `json:"pageCount"`
 	CurPage     int      `json:"curPage"`
+	UserInfo
 }
 
 func (i *IllustInfo) DigestString() string {

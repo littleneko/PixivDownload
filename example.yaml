@@ -11,7 +11,7 @@ download-parallel: 10
 max-retries: 2147483647
 retry-backoff-ms: 1000
 parse-timeout-ms: 5000
-download-timeout-ms: 10000
+download-timeout-ms: 600000
 user-white-list: [ ]
 user-block-list: [ ]
 
@@ -19,9 +19,9 @@ user-block-list: [ ]
 cookie: "PHPSESSID=ABCXYZ"
 user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
 
-download-scope: [ "ALL" ]
-user-id: 123456
-download-user-ids: [ ]
-download-illust-ids: [ ]
+bookmarks-uids: [ 123456 ]
+following-uids: [ ]
+artist-uids: [ ]
+illust-ids: [ ]
 no-r18: false
-only-first-picture: false
+only-p0: false

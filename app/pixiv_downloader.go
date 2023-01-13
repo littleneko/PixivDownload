@@ -2,58 +2,14 @@ package app
 
 import (
 	"crypto/sha1"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	set "github.com/deckarep/golang-set/v2"
 	log "github.com/sirupsen/logrus"
 )
-
-type DownloadScopeType int
-
-const (
-	DownloadScopeInvalid DownloadScopeType = -1
-	DownloadScopeAll     DownloadScopeType = iota
-	DownloadScopeBookmarks
-	DownloadScopeFollowing
-	DownloadScopeUsers
-	DownloadScopeIllusts
-)
-
-var downloadScopeTypes = func() map[string]DownloadScopeType {
-	return map[string]DownloadScopeType{
-		"ALL":       DownloadScopeAll,
-		"BOOKMARKS": DownloadScopeBookmarks,
-		"FOLLOWING": DownloadScopeFollowing,
-		"USERS":     DownloadScopeUsers,
-		"ILLUSTS":   DownloadScopeIllusts,
-	}
-}
-
-func GetDownloadScopeType(typeStr string) DownloadScopeType {
-	typeStrLower := strings.ToUpper(typeStr)
-	t, ok := downloadScopeTypes()[typeStrLower]
-	if !ok {
-		return DownloadScopeInvalid
-	}
-	return t
-}
-
-func ParseDownloadScope(scopes []string) (set.Set[DownloadScopeType], error) {
-	ret := set.NewThreadUnsafeSet[DownloadScopeType]()
-	for _, s := range scopes {
-		ds := GetDownloadScopeType(s)
-		if ds == DownloadScopeInvalid {
-			return nil, errors.New(fmt.Sprintf("unknown download scope '%s'", s))
-		}
-		ret.Add(ds)
-	}
-	return ret, nil
-}
 
 const BookmarksPageLimit = 48
 
@@ -79,11 +35,9 @@ func (w *Worker) retry(workFunc func() bool) {
 }
 
 type BookmarksWorker struct {
-	Worker
+	*Worker
 
 	workChan chan<- *BasicIllustInfo
-	offset   int32
-	total    int32
 
 	userWhiteListFilter map[PixivID]struct{}
 	userBlockListFilter map[PixivID]struct{}
@@ -91,14 +45,12 @@ type BookmarksWorker struct {
 
 func NewPixivBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager, workChan chan<- *BasicIllustInfo) *BookmarksWorker {
 	worker := &BookmarksWorker{
-		Worker: Worker{
+		Worker: &Worker{
 			options:   options,
 			illustMgr: illustMgr,
 			client:    NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs),
 		},
 		workChan:            workChan,
-		offset:              0,
-		total:               -1,
 		userWhiteListFilter: map[PixivID]struct{}{},
 		userBlockListFilter: map[PixivID]struct{}{},
 	}
@@ -118,43 +70,41 @@ func (pbw *BookmarksWorker) Run() {
 
 func (pbw *BookmarksWorker) ProcessBookmarks() {
 	for {
-		if !pbw.hasMorePage() {
-			log.Infof("[BookmarkFetchWorker] End scan all bookmarks, wait for next round")
-			pbw.offset = 0
-			pbw.total = -1
-			time.Sleep(time.Duration(pbw.options.ScanIntervalSec) * time.Second)
+		for _, uid := range pbw.options.BookmarksUserIds {
+			pbw.ProcessUserBookmarks(uid)
 		}
-		pbw.retry(func() bool {
-			bmBody, err := pbw.client.GetBookmarks(pbw.options.UserId, pbw.offset, BookmarksPageLimit)
-			if err == ErrNotFound || err == ErrFailedUnmarshal {
-				log.Warningf("[BookmarkFetchWorker] Skip bookmarks page, offset: %d, msg: %s", pbw.offset, err)
-				return true
-			}
-			if err != nil {
-				log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", pbw.offset, err)
-				return false
-			}
-			if bmBody.Total > 0 {
-				pbw.total = bmBody.Total
-			}
-			err = pbw.writeToQueue(bmBody)
-			if err != nil {
-				log.Warningf("[BookmarkFetchWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", pbw.offset, err)
-				return false
-			}
-			log.Infof("[BookmarkFetchWorker] Success get bookmarks, offset: %d", pbw.offset)
-			return true
-		})
-		pbw.moveToNextPage()
+		log.Infof("[BookmarkFetchWorker] End scan all bookmarks, wait for next round")
+		time.Sleep(time.Duration(pbw.options.ScanIntervalSec) * time.Second)
 	}
 }
 
-func (pbw *BookmarksWorker) moveToNextPage() {
-	pbw.offset += BookmarksPageLimit
-}
-
-func (pbw *BookmarksWorker) hasMorePage() bool {
-	return pbw.total == -1 || pbw.offset < pbw.total
+func (pbw *BookmarksWorker) ProcessUserBookmarks(uid string) {
+	bookmarksFetch := NewBookmarksFetcher(pbw.client, uid, BookmarksPageLimit)
+	for {
+		if !bookmarksFetch.HasMorePage() {
+			log.Infof("[BookmarkFetchWorker] End scan all bookmarks for uid '%s'", uid)
+			break
+		}
+		pbw.retry(func() bool {
+			bmBody, err := bookmarksFetch.GetNextPageBookmarks()
+			if err == ErrNotFound || err == ErrFailedUnmarshal {
+				log.Warningf("[BookmarkFetchWorker] Skip bookmarks page, offset: %d, msg: %s", bookmarksFetch.CurOffset(), err)
+				return true
+			}
+			if err != nil {
+				log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", bookmarksFetch.CurOffset(), err)
+				return false
+			}
+			err = pbw.writeToQueue(bmBody)
+			if err != nil {
+				log.Warningf("[BookmarkFetchWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", bookmarksFetch.CurOffset(), err)
+				return false
+			}
+			log.Infof("[BookmarkFetchWorker] Success get bookmarks, offset: %d", bookmarksFetch.CurOffset())
+			return true
+		})
+		bookmarksFetch.MoveToNextPage()
+	}
 }
 
 func (pbw *BookmarksWorker) filter(work *BasicIllustInfo) bool {
@@ -185,7 +135,7 @@ func (pbw *BookmarksWorker) checkIllustExist(work *BasicIllustInfo) (bool, error
 	return exist, err
 }
 
-func (pbw *BookmarksWorker) writeToQueue(bmBody *BookmarksBody) error {
+func (pbw *BookmarksWorker) writeToQueue(bmBody *BookmarksInfo) error {
 	for idx := range bmBody.Works {
 		work := &bmBody.Works[idx]
 		if pbw.filter(work) {
@@ -208,14 +158,14 @@ func (pbw *BookmarksWorker) writeToQueue(bmBody *BookmarksBody) error {
 }
 
 type IllustInfoFetchWorker struct {
-	Worker
+	*Worker
 	workChan   <-chan *BasicIllustInfo
 	illustChan chan<- *IllustInfo
 }
 
 func NewIllustInfoFetchWorker(options *PixivDlOptions, illustMgr IllustInfoManager, workChan <-chan *BasicIllustInfo, illustChan chan<- *IllustInfo) *IllustInfoFetchWorker {
 	worker := &IllustInfoFetchWorker{
-		Worker: Worker{
+		Worker: &Worker{
 			options:   options,
 			illustMgr: illustMgr,
 			client:    NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs),
@@ -262,13 +212,13 @@ func (w *IllustInfoFetchWorker) processIllustInfo(work *BasicIllustInfo) {
 }
 
 type IllustDownloadWorker struct {
-	Worker
+	*Worker
 	illustChan <-chan *IllustInfo
 }
 
 func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *IllustInfo) *IllustDownloadWorker {
 	worker := &IllustDownloadWorker{
-		Worker: Worker{
+		Worker: &Worker{
 			options:   options,
 			illustMgr: illustMgr,
 			client:    NewPixivClient(options.Cookie, options.UserAgent, options.DownloadTimeoutMs),
@@ -325,6 +275,7 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *IllustInfo) {
 	fileName := FormatFileName(illust, w.options.FilenamePattern)
 	fullFileName := filepath.Join(w.options.DownloadPath, fileName)
 	w.retry(func() bool {
+		start := time.Now()
 		data, err := w.client.getIllustData(illust.Urls.Original)
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
 			return true
@@ -345,22 +296,17 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *IllustInfo) {
 			log.Errorf("[IllustDownloadWorker] Failed to save illust info and retry, %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
-		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s", illust.DigestString(), fullFileName, illust.Urls.Original)
+		elapsed := time.Since(start)
+		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, elapsed: %s", illust.DigestString(), fullFileName, illust.Urls.Original, elapsed)
 		return true
 	})
 }
 
 func Start(options *PixivDlOptions, illustMgr IllustInfoManager) error {
-	downloadScopes, err := ParseDownloadScope(options.DownloadScope)
-	if err != nil {
-		return err
-	}
-
 	workChan := make(chan *BasicIllustInfo, 100)
 	illustChan := make(chan *IllustInfo, 100)
 
-	if (downloadScopes.Contains(DownloadScopeAll) || downloadScopes.Contains(DownloadScopeIllusts)) &&
-		len(options.DownloadIllustIds) > 0 {
+	if len(options.DownloadIllustIds) > 0 {
 		go func() {
 			for _, pid := range options.DownloadIllustIds {
 				workChan <- &BasicIllustInfo{
@@ -369,8 +315,8 @@ func Start(options *PixivDlOptions, illustMgr IllustInfoManager) error {
 			}
 		}()
 	}
-	if (downloadScopes.Contains(DownloadScopeAll) || downloadScopes.Contains(DownloadScopeBookmarks)) &&
-		len(options.UserId) > 0 {
+
+	if len(options.BookmarksUserIds) > 0 {
 		bookmarksFetchWorker := NewPixivBookmarksWorker(options, illustMgr, workChan)
 		bookmarksFetchWorker.Run()
 	}

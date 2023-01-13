@@ -11,22 +11,55 @@ import (
 	"time"
 )
 
-const (
-	BookmarksUrl   = "https://www.pixiv.net/ajax/user/%s/illusts/bookmarks"
-	IllustUrl      = "https://www.pixiv.net/ajax/illust/%s"
-	IllustPagesUrl = "https://www.pixiv.net/ajax/illust/%s/pages"
-)
-
-const (
-	BookmarksReferUrl      = "https://www.pixiv.net/users/%s/bookmarks/artworks"
-	IllustReferUrl         = "https://www.pixiv.net/artworks/%s"
-	IllustDownloadReferUrl = "https://www.pixiv.net"
-)
-
 var (
 	ErrNotFound        = errors.New("NotFound")
 	ErrFailedUnmarshal = errors.New("FailedUnmarshal")
 )
+
+const (
+	bookmarksUrl     = "https://www.pixiv.net/ajax/user/%s/illusts/bookmarks"
+	followingUrl     = "https://www.pixiv.net/ajax/user/%s/following"
+	illustInfoUrl    = "https://www.pixiv.net/ajax/illust/%s"
+	illustPagesUrl   = "https://www.pixiv.net/ajax/illust/%s/pages"
+	userAllIllustUrl = "https://www.pixiv.net/ajax/user/%s/profile/all"
+)
+
+const (
+	bookmarksReferUrl      = "https://www.pixiv.net/users/%s/bookmarks/artworks"
+	followingReferUrl      = "https://www.pixiv.net/users/%s/following"
+	illustInfoReferUrl     = "https://www.pixiv.net/artworks/%s"
+	illustDownloadReferUrl = "https://www.pixiv.net"
+	userAllIllustReferUrl  = "https://www.pixiv.net/users/%s"
+)
+
+type pageUrlType int
+
+const (
+	pageUrlTypeBookmarks pageUrlType = iota
+	pageUrlTypeFollowing
+)
+
+func genPageUrl(uid string, offset, limit int32, urlType pageUrlType) (string, error) {
+	params := url.Values{}
+	params.Set("tag", "")
+	params.Set("offset", strconv.FormatInt(int64(offset), 10))
+	params.Set("limit", strconv.FormatInt(int64(limit), 10))
+	params.Set("rest", "show")
+
+	var pUrl *url.URL
+	switch urlType {
+	case pageUrlTypeBookmarks:
+		pUrl, _ = url.Parse(fmt.Sprintf(bookmarksUrl, uid))
+		break
+	case pageUrlTypeFollowing:
+		pUrl, _ = url.Parse(fmt.Sprintf(followingUrl, uid))
+		break
+	default:
+		return "", errors.New("unknown page type")
+	}
+	pUrl.RawQuery = params.Encode()
+	return pUrl.String(), nil
+}
 
 type PixivClient struct {
 	client *http.Client
@@ -91,33 +124,67 @@ func (p *PixivClient) getPixivResp(url string, refer string) (*PixivResponse, er
 	return &jResp, nil
 }
 
-func (p *PixivClient) genBookmarksUrl(uid string, offset int32, limit int32) string {
-	params := url.Values{}
-	params.Set("tag", "")
-	params.Set("offset", strconv.FormatInt(int64(offset), 10))
-	params.Set("limit", strconv.FormatInt(int64(limit), 10))
-	params.Set("rest", "show")
-
-	bmUrl, _ := url.Parse(fmt.Sprintf(BookmarksUrl, uid))
-	bmUrl.RawQuery = params.Encode()
-
-	return bmUrl.String()
-}
-
-func (p *PixivClient) GetBookmarks(uid string, offset int32, limit int32) (*BookmarksBody, error) {
-	bUrl := p.genBookmarksUrl(uid, offset, limit)
-	refer := fmt.Sprintf(BookmarksReferUrl, uid)
+func (p *PixivClient) GetBookmarks(uid string, offset, limit int32) (*BookmarksInfo, error) {
+	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeBookmarks)
+	if err != nil {
+		return nil, err
+	}
+	refer := fmt.Sprintf(bookmarksReferUrl, uid)
 	resp, err := p.getPixivResp(bUrl, refer)
 	if err != nil {
 		return nil, err
 	}
 
-	var bmBody BookmarksBody
-	err = json.Unmarshal(resp.Body, &bmBody)
+	var bookmarks BookmarksInfo
+	err = json.Unmarshal(resp.Body, &bookmarks)
 	if err != nil {
 		return nil, ErrFailedUnmarshal
 	}
-	return &bmBody, nil
+	return &bookmarks, nil
+}
+
+func (p *PixivClient) GetFollowing(uid string, offset, limit int32) (*FollowingInfo, error) {
+	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeFollowing)
+	if err != nil {
+		return nil, err
+	}
+	refer := fmt.Sprintf(followingReferUrl, uid)
+	resp, err := p.getPixivResp(bUrl, refer)
+	if err != nil {
+		return nil, err
+	}
+
+	var following FollowingInfo
+	err = json.Unmarshal(resp.Body, &following)
+	if err != nil {
+		return nil, ErrFailedUnmarshal
+	}
+	return &following, nil
+}
+
+func (p *PixivClient) GetUserIllusts(uid string) ([]*BasicIllustInfo, error) {
+	allUrl := fmt.Sprintf(userAllIllustUrl, uid)
+	refer := fmt.Sprintf(userAllIllustReferUrl, uid)
+	resp, err := p.getPixivResp(allUrl, refer)
+	if err != nil {
+		return nil, err
+	}
+
+	var body struct {
+		Illusts map[string]struct{} `json:"illusts"`
+	}
+	err = json.Unmarshal(resp.Body, &body)
+	if err != nil {
+		return nil, ErrFailedUnmarshal
+	}
+
+	illusts := make([]*BasicIllustInfo, len(body.Illusts))
+	for k, _ := range body.Illusts {
+		illusts = append(illusts, &BasicIllustInfo{
+			Id: PixivID(k),
+		})
+	}
+	return illusts, nil
 }
 
 func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*IllustInfo, error) {
@@ -133,8 +200,8 @@ func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*IllustInf
 }
 
 func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) {
-	illustUrl := fmt.Sprintf(IllustUrl, illustId)
-	refer := fmt.Sprintf(IllustReferUrl, illustId)
+	illustUrl := fmt.Sprintf(illustInfoUrl, illustId)
+	refer := fmt.Sprintf(illustInfoReferUrl, illustId)
 	iResp, err := p.getPixivResp(illustUrl, refer)
 	if err != nil {
 		return nil, err
@@ -201,8 +268,8 @@ func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*IllustInfo, error) 
 }
 
 func (p *PixivClient) getIllustAllPages(seed *IllustInfo) ([]*IllustInfo, error) {
-	illustUrl := fmt.Sprintf(IllustPagesUrl, seed.Id)
-	refer := fmt.Sprintf(IllustReferUrl, seed.Id)
+	illustUrl := fmt.Sprintf(illustPagesUrl, seed.Id)
+	refer := fmt.Sprintf(illustInfoReferUrl, seed.Id)
 	iResp, err := p.getPixivResp(illustUrl, refer)
 	if err != nil {
 		return nil, err
@@ -228,7 +295,7 @@ func (p *PixivClient) getIllustAllPages(seed *IllustInfo) ([]*IllustInfo, error)
 }
 
 func (p *PixivClient) getIllustData(url string) ([]byte, error) {
-	resp, err := p.getRaw(url, IllustDownloadReferUrl)
+	resp, err := p.getRaw(url, illustDownloadReferUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -238,4 +305,44 @@ func (p *PixivClient) getIllustData(url string) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+type BookmarksFetcher struct {
+	client    *PixivClient
+	uid       string
+	limit     int32
+	total     int32
+	curOffset int32
+}
+
+func NewBookmarksFetcher(client *PixivClient, uid string, limit int32) *BookmarksFetcher {
+	return &BookmarksFetcher{
+		client:    client,
+		uid:       uid,
+		limit:     limit,
+		total:     -1,
+		curOffset: 0,
+	}
+}
+func (bf *BookmarksFetcher) CurOffset() int32 {
+	return bf.curOffset
+}
+
+func (bf *BookmarksFetcher) MoveToNextPage() {
+	bf.curOffset += bf.limit
+}
+
+func (bf *BookmarksFetcher) HasMorePage() bool {
+	return bf.total == -1 || bf.curOffset < bf.total
+}
+
+func (bf *BookmarksFetcher) GetNextPageBookmarks() (*BookmarksInfo, error) {
+	bmInfo, err := bf.client.GetBookmarks(bf.uid, bf.curOffset, bf.limit)
+	if err != nil {
+		return nil, err
+	}
+	if bmInfo.Total > 0 {
+		bf.total = bmInfo.Total
+	}
+	return bmInfo, nil
 }

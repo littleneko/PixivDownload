@@ -38,28 +38,28 @@ Usage:
   pixiv download [flags]
 
 Flags:
-      --cookie string                 Your Cookies, only need the 'PHPSESSID=abcxyz'
-      --database-type string          Database to store the illust info, 'NONE' means not use database and not check illust exist, choices: ['NONE', 'SQLITE'] (default "SQLITE")
-      --download-illust-ids strings   Illust id to download
-      --download-parallel int32       Parallel to download illust (default 10)
-      --download-path string          Download file location (default "pixiv")
-      --download-scope strings        What to download, choices: ['ALL', 'BOOKMARKS', 'FOLLOWING', 'USER', 'ILLUST'] (default [ALL])
-      --download-timeout-ms int32     Timeout for download illust (default 10000)
-      --download-user-ids strings     Download all illust of this user
-      --filename-pattern string       Filename pattern, all tag: ['user_id, 'user', 'id', 'title'] (default "{id}")
-  -h, --help                          help for download
-      --max-retries int32             Max retry times (default 2147483647)
-      --no-r18                        Do not download R18 illust
-      --only-p0                       Only download the first picture of the illust if a multi picture illust
-      --parse-parallel int32          Parallel to get an parse illust info (default 5)
-      --parse-timeout-ms int32        Timeout for get illust info (default 5000)
-      --retry-backoff-ms int32        Backoff time if request failed (default 1000)
-      --scan-interval-sec int32       The interval to check new illust if run in service mode (default 3600)
-      --sqlite-path string            Sqlite file location if use sqlite database (default "storage")
-      --user-agent string             Http User-Agent header
-      --user-block-list strings       Illust user id in this list will skip to download
-      --user-id string                Download all bookmarks or following user's illust, if download-scope include bookmarks/following
-      --user-white-list strings       Only illust user id in this list will be download
+      --artist-uids strings         Download all illust of this user
+      --bookmarks-uids string       Download all bookmarks illust of this user
+      --cookie string               Your Cookies, only need the 'PHPSESSID=abcxyz'
+      --database-type string        Database to store the illust info, 'NONE' means not use database and not check illust exist, choices: ['NONE', 'SQLITE'] (default "SQLITE")
+      --download-parallel int32     Parallel to download illust (default 10)
+      --download-path string        Download file location (default "pixiv")
+      --download-timeout-ms int32   Timeout for download illust (default 600000)
+      --filename-pattern string     Filename pattern, all tag: ['user_id, 'user', 'id', 'title'] (default "{id}")
+      --following-uids string       Download all following user's illust of this user
+  -h, --help                        help for download
+      --illust-ids strings          Illust id to download
+      --max-retries int32           Max retry times (default 2147483647)
+      --no-r18                      Do not download R18 illust
+      --only-p0                     Only download the first picture of the illust if a multi picture illust
+      --parse-parallel int32        Parallel to get an parse illust info (default 5)
+      --parse-timeout-ms int32      Timeout for get illust info (default 5000)
+      --retry-backoff-ms int32      Backoff time if request failed (default 1000)
+      --scan-interval-sec int32     The interval to check new illust if run in service mode (default 3600)
+      --sqlite-path string          Sqlite file location if use sqlite database (default "storage")
+      --user-agent string           Http User-Agent header (default "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+      --user-block-list strings     Illust user id in this list will skip to download
+      --user-white-list strings     Only illust user id in this list will be download
 
 Global Flags:
       --config string      config file (default is ./pixiv.yaml and $HOME/pixiv.yaml)
@@ -79,14 +79,14 @@ log-level: INFO
 database-type: sqlite
 sqlite-path: storage
 download-path: pixiv
-filename-pattern: "{user_id}_{user}/{id}_{title}"
+filename-pattern: "{id}_{title}"
 scan-interval-sec: 3600
 parse-parallel: 5
 download-parallel: 10
 max-retries: 2147483647
 retry-backoff-ms: 1000
 parse-timeout-ms: 5000
-download-timeout-ms: 10000
+download-timeout-ms: 600000
 user-white-list: [ ]
 user-block-list: [ ]
 
@@ -94,12 +94,13 @@ user-block-list: [ ]
 cookie: "PHPSESSID=ABCXYZ"
 user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
 
-download-scope: [ "ALL" ]
-user-id: 123456
-download-user-ids: [ ]
-download-illust-ids: [ ]
+bookmarks-uids: [ 123456 ]
+following-uids: [ ]
+artist-uids: [ ]
+illust-ids: [ ]
 no-r18: false
 only-p0: false
+
 ```
 
 * DatabaseType: pixiv-dl will store all illust info to the database, now only support 'sqlite'
