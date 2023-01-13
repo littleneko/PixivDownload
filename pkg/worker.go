@@ -1,4 +1,4 @@
-package main
+package pkg
 
 import (
 	"crypto/sha1"
@@ -47,15 +47,15 @@ type Worker struct {
 
 func (w *Worker) retry(workFunc func() bool) {
 	for {
-		try := workFunc()
-		if !try {
+		ok := workFunc()
+		if ok {
 			break
 		}
 		time.Sleep(time.Duration(w.conf.RetryInterval) * time.Second)
 	}
 }
 
-func (w *Worker) request(url string, refer string) (*http.Response, error, bool /* need retry*/) {
+func (w *Worker) request(url string, refer string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Referer", refer)
 	req.Header.Add("Cookie", w.conf.Cookie)
@@ -63,15 +63,16 @@ func (w *Worker) request(url string, refer string) (*http.Response, error, bool 
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return resp, err, true
+		return resp, err
 	}
 	if resp.StatusCode == 404 {
-		return resp, errors.New(resp.Status), false
+		log.Warningf("404: %s", url)
+		return resp, nil
 	}
 	if resp.StatusCode != 200 {
-		return resp, errors.New(resp.Status), true
+		return resp, errors.New(resp.Status)
 	}
-	return resp, nil, false
+	return resp, nil
 }
 
 type BookmarkFetchWorker struct {
@@ -145,30 +146,29 @@ func (w *BookmarkFetchWorker) run() {
 	workFunc := func() bool {
 		log.Infof("[BookmarkFetchWorker] Start to get bookmarks, offset: %d, limit: %d, total: %d", w.offset, BookmarksLimit, w.total)
 		bookmarkUrl := w.NextUrl()
-		resp, err, retry := w.request(bookmarkUrl, refer)
+		resp, err := w.request(bookmarkUrl, refer)
 		if err != nil {
-			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry: %t, url: %s, msg: %s", retry, bookmarkUrl, err)
-			return retry
+			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry, url: %s, msg: %s", bookmarkUrl, err)
+			return false
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry: %t, url: %s, msg: %s", retry, bookmarkUrl, err)
-			return true
+			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry, url: %s, msg: %s", bookmarkUrl, err)
+			return false
 		}
 		var bResp Resp
 		_ = json.Unmarshal(body, &bResp)
 		if bResp.Error {
-			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry, err: %s", bResp.Message)
-			return true
+			log.Warningf("[BookmarkFetchWorker] Failed to get bookmarks, retry, msg: %s", bResp.Message)
+			return false
 		}
 
 		var bmBody BookmarkBody
 		err = json.Unmarshal(bResp.Body, &bmBody)
 		if err != nil {
-			log.Warningf("[BookmarkFetchWorker] Failed to unmarshal json, skip, err: %s, raw: %s", err, bResp.Body)
-			w.MoveToNextPage()
-			return false
+			log.Errorf("[BookmarkFetchWorker] Failed to unmarshal json, skip, err: %s, raw: %s", err, bResp.Body)
+			return true
 		}
 		w.total = int64(bmBody.Total)
 
@@ -178,31 +178,37 @@ func (w *BookmarkFetchWorker) run() {
 				continue
 			}
 
-			exist, err := w.db.IllustExist(string(work.Id))
+			exist := false
+			err = Retry(func() error {
+				exist, err = w.db.CheckIllust(string(work.Id), work.PageCount)
+				return err
+			}, 3)
 			if err != nil {
-				log.Errorf("[BookmarkFetchWorker] Failed to query db, msg: %s", err)
-				return true
+				log.Errorf("[BookmarkFetchWorker] Failed to check illust exist, retry, id: %s, msg: %s", work.Id, err)
+				return false
 			}
 			if exist {
-				log.Infof("[BookmarkFetchWorker] Illust exist, id: %s, title: %s, uid: %s, uname: %s", work.Id, work.Title, work.UserId, work.UserName)
+				log.Debugf("[BookmarkFetchWorker] Illust exist, id: %s, title: %s, uid: %s, uname: %s", work.Id, work.Title, work.UserId, work.UserName)
 			} else {
-				log.Infof("[BookmarkFetchWorker] Success get bookmarks info, id: %s, title: %s, uid: %s, uname: %s", work.Id, work.Title, work.UserId, work.UserName)
+				log.Infof("[BookmarkFetchWorker] Success get bookmark work, id: %s, title: %s, uid: %s, uname: %s", work.Id, work.Title, work.UserId, work.UserName)
 				w.workChan <- work
 			}
 		}
-		w.MoveToNextPage()
-		return false
+		return true
 	}
 
-	for {
-		if !w.HasMorePage() {
-			log.Infof("[BookmarkFetchWorker] Success get all bookmarks, wait for next round")
-			w.offset = 0
-			w.total = -1
-			time.Sleep(time.Duration(w.conf.ScanInterval) * time.Second)
+	go func() {
+		for {
+			if !w.HasMorePage() {
+				log.Infof("[BookmarkFetchWorker] Success get all bookmarks, wait for next round")
+				w.offset = 0
+				w.total = -1
+				time.Sleep(time.Duration(w.conf.ScanInterval) * time.Second)
+			}
+			w.retry(workFunc)
+			w.MoveToNextPage()
 		}
-		w.retry(workFunc)
-	}
+	}()
 }
 
 type IllustInfoFetchWorker struct {
@@ -251,30 +257,30 @@ func (w *IllustInfoFetchWorker) fetchIllustBasicInfo(work *BookmarkWorks) *Illus
 	illustUrl := fmt.Sprintf(IllustUrl, work.Id)
 	refer := fmt.Sprintf(IllustReferUrl, work.Id)
 	w.retry(func() bool {
-		resp, err, retry := w.request(illustUrl, refer)
+		resp, err := w.request(illustUrl, refer)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info, retry: %t, url: %s, msg: %s", retry, illustUrl, err)
-			return retry
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info, retry, id: %s, url: %s, msg: %s", work.Id, illustUrl, err)
+			return false
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info, retry: %t, url: %s, msg: %s", retry, illustUrl, err)
-			return true
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info, retry, id: %s, url: %s, msg: %s", work.Id, illustUrl, err)
+			return false
 		}
 		var iResp Resp
 		_ = json.Unmarshal(body, &iResp)
 		if iResp.Error {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get bookmarks, retry: true, err: %s", iResp.Message)
-			return true
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info, retry, id: %s, url: %s, err: %s", work.Id, illustUrl, iResp.Message)
+			return false
 		}
 
 		err = json.Unmarshal(iResp.Body, &illust)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, err: %s, raw: %s", err, iResp.Body)
-			return false
+			log.Errorf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, id: %s, err: %s, raw: %s", work.Id, err, iResp.Body)
+			return true
 		}
-		return false
+		return true
 	})
 	return &illust
 }
@@ -284,22 +290,22 @@ func (w *IllustInfoFetchWorker) fetchIllustAllPages(seed *Illust) []*Illust {
 	illustUrl := fmt.Sprintf(IllustPagesUrl, seed.Id)
 	refer := fmt.Sprintf(IllustReferUrl, seed.Id)
 	w.retry(func() bool {
-		resp, err, retry := w.request(illustUrl, refer)
+		resp, err := w.request(illustUrl, refer)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust pages, retry: %t, url: %s, msg: %s", retry, illustUrl, err)
-			return retry
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust pages, retry, id: %s, url: %s, msg: %s", seed.Id, illustUrl, err)
+			return false
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust pages, retry: true, url: %s, msg: %s", illustUrl, err)
-			return true
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust pages, retry, id: %s, url: %s, msg: %s", seed.Id, illustUrl, err)
+			return false
 		}
 		var iResp Resp
 		_ = json.Unmarshal(body, &iResp)
 		if iResp.Error {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust page info, retry: true, err: %s", iResp.Message)
-			return true
+			log.Warningf("[IllustInfoFetchWorker] Failed to get illust page info, retry, id: %s, url: %s, err: %s", seed.Id, illustUrl, iResp.Message)
+			return false
 		}
 
 		type IllustPagesUnit struct {
@@ -308,8 +314,8 @@ func (w *IllustInfoFetchWorker) fetchIllustAllPages(seed *Illust) []*Illust {
 		var illustPageBody []IllustPagesUnit
 		err = json.Unmarshal(iResp.Body, &illustPageBody)
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, err: %s, raw: %s", err, iResp.Body)
-			return false
+			log.Warningf("[IllustInfoFetchWorker] Failed to unmarshal json, skip, id: %s, err: %s, raw: %s", seed.Id, err, iResp.Body)
+			return true
 		}
 
 		for idx := range illustPageBody {
@@ -319,7 +325,7 @@ func (w *IllustInfoFetchWorker) fetchIllustAllPages(seed *Illust) []*Illust {
 			illusts = append(illusts, &illust)
 		}
 
-		return false
+		return true
 	})
 	return illusts
 }
@@ -370,36 +376,36 @@ func (w *IllustDownloadWorker) downloadIllust(illust *Illust) {
 	fullFileName := filepath.Join(w.conf.DownloadPath, fileName)
 	fullDirName := filepath.Dir(fullFileName)
 	w.retry(func() bool {
-		resp, err, retry := w.request(illust.Urls.Original, IllustDownloadReferUrl)
+		resp, err := w.request(illust.Urls.Original, IllustDownloadReferUrl)
 		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to download illust, retry: %t, url: %s, msg: %s", retry, illust.Urls.Original, err)
-			return retry
+			log.Warningf("[IllustDownloadWorker] Failed to download illust, retry, id: %s, url: %s, msg: %s", illust.Id, illust.Urls.Original, err)
+			return false
 		}
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to download illust, retry: true, url: %s, msg: %s", illust.Urls.Original, err)
-			return true
+			log.Warningf("[IllustDownloadWorker] Failed to download illust, retry, id: %s, url: %s, msg: %s", illust.Id, illust.Urls.Original, err)
+			return false
 		}
 
-		if _, err := os.Stat(fullDirName); os.IsNotExist(err) {
-			err = os.MkdirAll(fullDirName, 0755)
-			if err != nil {
-				log.Warningf("[IllustDownloadWorker] Failed to mkdir, msg: %s", err)
-				os.Exit(-1)
-			}
+		err = CheckAndMkdir(fullDirName)
+		if err != nil {
+			log.Warningf("[IllustDownloadWorker] Failed to create dir, dir: %s, msg: %s", fullDirName, err)
+			return false
 		}
 		err = os.WriteFile(fullFileName, data, 0644)
 		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to write illust, retry: true, url: %s, msg: %s", illust.Urls.Original, err)
-			return true
+			log.Warningf("[IllustDownloadWorker] Failed to write illust, retry, id: %s, url: %s, msg: %s", illust.Id, illust.Urls.Original, err)
+			return false
 		}
-		err = w.db.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
+		err = Retry(func() error {
+			return w.db.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
+		}, 3)
 		if err != nil {
-			log.Errorf("[IllustDownloadWorker] Failed to write db, retry: true, msg: %s", err)
-			return true
+			log.Errorf("[IllustDownloadWorker] Failed to write db, retry, id: %s, msg: %s", illust.Id, err)
+			return false
 		}
 		log.Infof("[IllustDownloadWorker] Success download illust, id: %s, url: %s", illust.Id, illust.Urls.Original)
-		return false
+		return true
 	})
 }
 
