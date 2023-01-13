@@ -6,6 +6,7 @@ import (
 )
 
 type Config struct {
+	LogToFile           bool
 	LogPath             string
 	LogLevel            string
 	DatabaseType        string
@@ -25,11 +26,24 @@ type Config struct {
 }
 
 func GetConfig(file string) *Config {
-	viper.SetConfigFile(file)
+	if len(file) > 0 {
+		viper.SetConfigFile(file)
+	} else {
+		viper.SetConfigName("pixiv")
+		viper.SetConfigType("toml")
+		viper.AddConfigPath(".")
+		viper.AddConfigPath("config")
+	}
 
 	viper.SetEnvPrefix("PIXIV")
 	viper.AutomaticEnv()
+	_ = viper.BindEnv("FileNamePattern")
+	_ = viper.BindEnv("UserId")
+	_ = viper.BindEnv("Cookie")
+	_ = viper.BindEnv("UserIdWhiteList")
+	_ = viper.BindEnv("UserIdBlockList")
 
+	viper.SetDefault("LogToFile", false)
 	viper.SetDefault("LogPath", "log")
 	viper.SetDefault("LogLevel", "INFO")
 	viper.SetDefault("DatabaseType", "sqlite")

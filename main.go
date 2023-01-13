@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-var configFileName = flag.String("config", "pixiv.toml", "config file name")
+var configFileName = flag.String("config", "", "config file name")
 
 func main() {
 	flag.Parse()
