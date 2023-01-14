@@ -94,6 +94,11 @@ func (i *FullIllustInfo) DigestString() string {
 		i.Id, i.PageIdx, i.Title, i.UserId, i.UserName, i.PageCount, i.R18, i.BookmarkCount, i.LikeCount)
 }
 
+func (i *FullIllustInfo) DigestStringWithUrl() string {
+	return fmt.Sprintf("[id: %s, page: %d, title: %s, uid: %s, uname: %s, pageCnt: %d, R18: %v, bookmarkCnt: %d, likeCnt: %d, width: %d, height: %d, URL: %s]",
+		i.Id, i.PageIdx, i.Title, i.UserId, i.UserName, i.PageCount, i.R18, i.BookmarkCount, i.LikeCount, i.Width, i.Height, i.Urls.Original)
+}
+
 var (
 	ErrNotFound        = errors.New("NotFound")
 	ErrFailedUnmarshal = errors.New("FailedUnmarshal")

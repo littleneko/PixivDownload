@@ -13,6 +13,7 @@ import (
 	"pixiv/app"
 )
 
+var shortMsg bool = false
 var illustIds []string
 var userId string
 
@@ -41,6 +42,8 @@ var userInfoCmd = &cobra.Command{
 }
 
 func init() {
+	infoCmd.PersistentFlags().BoolVarP(&shortMsg, "short-msg", "s", false, "Show the short msg")
+
 	illustInfoCmd.Flags().StringSliceVar(&illustIds, "ids", []string{}, "Get the illust info of this pid")
 	err := illustInfoCmd.MarkFlagRequired("ids")
 	cobra.CheckErr(err)
@@ -61,12 +64,16 @@ func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
 			continue
 		}
 		for _, illust := range illusts {
-			j, err := json.MarshalIndent(illust, "", "  ")
-			if err != nil {
-				fmt.Printf("ID: %s, ERROE: %s\n", pid, err)
-				continue
+			if shortMsg {
+				fmt.Println(illust.DigestStringWithUrl())
+			} else {
+				j, err := json.MarshalIndent(illust, "", "  ")
+				if err != nil {
+					fmt.Printf("ID: %s, ERROE: %s\n", pid, err)
+					continue
+				}
+				fmt.Println(string(j))
 			}
-			fmt.Println(string(j))
 		}
 	}
 }
