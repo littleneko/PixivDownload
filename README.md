@@ -1,13 +1,13 @@
 # PixivDownload
 
-A tool to download pixiv illust. (Now only support download illust in your bookmarks.)
+A tool to download pixiv illust.
 
 ## Usage
 
-* Download the users bookmarks: `pixiv-dl download --cookie=abc --download-bookmarks-uids=1`
-* Download the specified pid: `pixiv-dl download --download-illust-ids=1,2,3`
-* Download user's all illust: `pixiv-dl download --download-artist-uids=1,2,3`
-* Download user's all illust which bookmark_count great then
+* Download all illustrations in user's bookmarks: `pixiv-dl download --cookie=abc --download-bookmarks-uids=1`
+* Download illustrations of specified illustration id: `pixiv-dl download --download-illust-ids=1,2,3`
+* Download all illustrations of specified users: `pixiv-dl download --download-artist-uids=1,2,3`
+* Download all illustrations of specified users which bookmark count great then
   1000: `pixiv-dl download --download-artist-uids=1,2,3 --bookmark-gt=1000`
 
 You can use `--service-mode` to run it as a service.
@@ -135,7 +135,7 @@ pixel-gt: -1
 * UserWhiteList/UserBlockList: filter illust in your bookmarks, block list will be ignored when white list is not
   empty.
 
-All config item will be read from env if not set in config file, the env var name MUST be start with `PIXIV_` and in
+All config item will be read from env, the env var name MUST be start with `PIXIV_` and in
 upper case(env key split by `_`, e.g. `PIXIV_DOWNLOAD_PATH`).
 
 ### Docker
