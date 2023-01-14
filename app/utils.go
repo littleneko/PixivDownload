@@ -1,4 +1,4 @@
-package pkg
+package app
 
 import (
 	"os"
@@ -35,4 +35,16 @@ func StandardizeFileName(name string) string {
 		newName = strings.Replace(newName, c, "_", -1)
 	}
 	return newName
+}
+
+func GetHttpProxy() string {
+	envKeys := []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"}
+	var proxy string
+	for _, key := range envKeys {
+		if len(proxy) > 0 {
+			break
+		}
+		proxy = os.Getenv(key)
+	}
+	return proxy
 }

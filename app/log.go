@@ -1,4 +1,4 @@
-package pkg
+package app
 
 import (
 	"bytes"
@@ -35,25 +35,25 @@ func (m *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func InitLog(conf *Config) {
-	if conf.LogToFile {
-		err := CheckAndMkdir(conf.LogPath)
+func InitLog(logPath string, logLevel string) {
+	if len(logPath) > 0 {
+		err := CheckAndMkdir(logPath)
 		if err != nil {
 			log.Fatalf("Failed to create log dir, msg: %s", err)
 		}
 
-		writer, err := os.OpenFile(filepath.Join(conf.LogPath, "pixiv.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		writer, err := os.OpenFile(filepath.Join(logPath, "pixiv.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalf("Failed to create log file: %v", err)
 		}
 		logrus.SetOutput(writer)
 	}
 
-	logLevel, err := logrus.ParseLevel(conf.LogLevel)
+	logLevelP, err := logrus.ParseLevel(logLevel)
 	if err != nil {
-		log.Fatalf("Unknown log level '%s', msg: %s", conf.LogLevel, err)
+		log.Fatalf("Unknown log level '%s', msg: %s", logLevel, err)
 	}
-	logrus.SetLevel(logLevel)
+	logrus.SetLevel(logLevelP)
 	logrus.SetReportCaller(true)
 	logrus.SetFormatter(&MyFormatter{})
 }

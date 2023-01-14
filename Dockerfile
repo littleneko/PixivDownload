@@ -9,7 +9,8 @@ COPY go.mod ./
 COPY go.sum ./
 RUN go mod download
 
-ADD pkg ./pkg
+ADD app ./app
+ADD cmd ./cmd
 COPY main.go ./
 
 RUN go build -o /pixiv-dl
@@ -23,4 +24,4 @@ WORKDIR /
 
 COPY --from=build /pixiv-dl /pixiv-dl
 
-ENTRYPOINT ["/pixiv-dl"]
+CMD ["/pixiv-dl", "download", "--service-mode"]

@@ -1,0 +1,33 @@
+log-path:
+log-level: INFO
+
+service-mode: false
+
+database-type: sqlite
+sqlite-path: storage
+download-path: pixiv
+filename-pattern: "{id}_{title}"
+scan-interval-sec: 3600
+parse-parallel: 5
+download-parallel: 10
+max-retries: 2147483647
+retry-backoff-ms: 10000
+parse-timeout-ms: 5000
+download-timeout-ms: 600000
+
+cookie: "PHPSESSID=ABCXYZ"
+user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+
+download-bookmarks-uids: [ 123456 ]
+download-following-uids: [ ]
+download-artist-uids: [ ]
+download-illust-ids: [ ]
+
+user-white-list: [ ]
+user-block-list: [ ]
+
+no-r18: false
+only-p0: false
+bookmark-gt: -1
+like-gt: -1
+pixel-gt: -1
