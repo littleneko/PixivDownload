@@ -358,7 +358,9 @@ func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo
 	}
 
 	type IllustPagesUnit struct {
-		Urls Urls `json:"urls"`
+		Urls   Urls `json:"urls"`
+		Width  int  `json:"width"`
+		Height int  `json:"height"`
 	}
 	var illustPageBody []IllustPagesUnit
 	err = json.Unmarshal(iResp.Body, &illustPageBody)
@@ -371,6 +373,8 @@ func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo
 		illust := *seed
 		illust.PageIdx = idx
 		illust.Urls = illustPageBody[idx].Urls
+		illust.Width = illustPageBody[idx].Width
+		illust.Height = illustPageBody[idx].Height
 		illusts = append(illusts, &illust)
 	}
 	return illusts, nil
