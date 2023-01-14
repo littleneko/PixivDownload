@@ -12,7 +12,7 @@ on:
       - 'main'
 
 jobs:
-  docker:
+  dockerHubPush:
     runs-on: ubuntu-latest
     steps:
       -
