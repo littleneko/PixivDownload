@@ -60,8 +60,11 @@ func init() {
 
 	rootCmd.PersistentFlags().String("log-path", "", "Log file path (default is stdout)")
 	rootCmd.PersistentFlags().String("log-level", "INFO", "Log level, choices: [DEBUG, INFO, WARNING, ERROR]")
+
 	rootCmd.PersistentFlags().String("cookie", "", "Your Cookies, only need the key-value 'PHPSESSID=abcxyz'")
 	rootCmd.PersistentFlags().String("user-agent", defaultUserAgent, "Http User-Agent header")
+	rootCmd.PersistentFlags().String("proxy", "", "HTTP/HTTPS/Socks proxy")
+
 	err := viper.BindPFlags(rootCmd.PersistentFlags())
 	cobra.CheckErr(err)
 
