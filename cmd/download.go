@@ -34,9 +34,6 @@ and download new illust periodically.`,
 		if err != nil {
 			log.Fatalf("Failed to read config file, msg: %s", err)
 		} else {
-			if len(options.Proxy) == 0 {
-				options.Proxy = app.GetHttpProxy()
-			}
 			j, _ := json.MarshalIndent(options, "", "  ")
 			log.Infof("Use options: %s", string(j))
 		}

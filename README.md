@@ -31,6 +31,7 @@ Flags:
   -h, --help                help for pixiv
       --log-level string    Log level, choices: [DEBUG, INFO, WARNING, ERROR] (default "INFO")
       --log-path string     Log file path (default is stdout)
+      --proxy string        HTTP/HTTPS/Socks proxy
       --user-agent string   Http User-Agent header (default "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
 
 Use "pixiv [command] --help" for more information about a command.
@@ -80,6 +81,7 @@ Global Flags:
       --cookie string       Your Cookies, only need the key-value 'PHPSESSID=abcxyz'
       --log-level string    Log level, choices: [DEBUG, INFO, WARNING, ERROR] (default "INFO")
       --log-path string     Log file path (default is stdout)
+      --proxy string        HTTP/HTTPS/Socks proxy
       --user-agent string   Http User-Agent header (default "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
 
 ```

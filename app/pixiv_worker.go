@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/sha1"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,15 +32,21 @@ type basePixivWorker struct {
 	produceCnt uint64
 }
 
-func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, client *PixivClient) *basePixivWorker {
+func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout int32) *basePixivWorker {
 	worker := &basePixivWorker{
 		options:             options,
 		illustMgr:           manager,
-		client:              client,
 		userWhiteListFilter: mapset.NewSet[PixivID](),
 		userBlockListFilter: mapset.NewSet[PixivID](),
 		consumeCnt:          0,
 		produceCnt:          0,
+	}
+
+	if len(options.Proxy) > 0 {
+		proxy, _ := url.Parse(options.Proxy)
+		worker.client = NewPixivClientWithProxy(options.Cookie, options.UserAgent, proxy, timeout)
+	} else {
+		worker.client = NewPixivClient(options.Cookie, options.UserAgent, timeout)
 	}
 
 	for _, uid := range options.UserWhiteList {
@@ -171,9 +178,8 @@ type BookmarksWorker struct {
 
 func NewBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
 	input <-chan PixivID, output chan<- *BasicIllustInfo) *BookmarksWorker {
-	client := NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs)
 	worker := &BookmarksWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, client),
+		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:           input,
 		output:          output,
 	}
@@ -253,9 +259,8 @@ type ArtistWorker struct {
 
 func NewArtistWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
 	input <-chan PixivID, output chan<- *BasicIllustInfo) *ArtistWorker {
-	client := NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs)
 	worker := &ArtistWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, client),
+		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:           input,
 		output:          output,
 	}
@@ -316,9 +321,8 @@ type IllustInfoFetchWorker struct {
 
 func NewIllustInfoFetchWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
 	input <-chan *BasicIllustInfo, output chan<- *FullIllustInfo) *IllustInfoFetchWorker {
-	client := NewPixivClient(options.Cookie, options.UserAgent, options.ParseTimeoutMs)
 	worker := &IllustInfoFetchWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, client),
+		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:           input,
 		output:          output,
 	}
@@ -379,9 +383,8 @@ type IllustDownloadWorker struct {
 }
 
 func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *FullIllustInfo) *IllustDownloadWorker {
-	client := NewPixivClient(options.Cookie, options.UserAgent, options.DownloadTimeoutMs)
 	worker := &IllustDownloadWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, client),
+		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:           illustChan,
 	}
 	return worker

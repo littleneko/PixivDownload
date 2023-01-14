@@ -10,10 +10,11 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"net/url"
 	"pixiv/app"
 )
 
-var shortMsg bool = false
+var shortMsg = false
 var illustIds []string
 var userId string
 
@@ -27,8 +28,8 @@ var illustInfoCmd = &cobra.Command{
 	Use:   "illust",
 	Short: "Get illust info",
 	Run: func(cmd *cobra.Command, args []string) {
-		pixivClient := app.NewPixivClient(viper.GetString("cookie"), viper.GetString("user-agent"), 5000)
-		showIllustInfo(pixivClient, illustIds)
+		client := buildPixivClient()
+		showIllustInfo(client, illustIds)
 	},
 }
 
@@ -36,8 +37,8 @@ var userInfoCmd = &cobra.Command{
 	Use:   "user",
 	Short: "Get user info",
 	Run: func(cmd *cobra.Command, args []string) {
-		pixivClient := app.NewPixivClient(viper.GetString("cookie"), viper.GetString("user-agent"), 5000)
-		showUserInfo(pixivClient, userId)
+		client := buildPixivClient()
+		showUserInfo(client, userId)
 	},
 }
 
@@ -56,8 +57,21 @@ func init() {
 	infoCmd.AddCommand(userInfoCmd)
 }
 
+func buildPixivClient() *app.PixivClient {
+	proxy := viper.GetString("proxy")
+	cookie := viper.GetString("cookie")
+	ua := viper.GetString("user-agent")
+	if len(proxy) > 0 {
+		proxyUrl, err := url.Parse(proxy)
+		cobra.CheckErr(err)
+		return app.NewPixivClientWithProxy(cookie, ua, proxyUrl, 5000)
+	} else {
+		return app.NewPixivClient(cookie, ua, 5000)
+	}
+}
+
 func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
-	for _, pid := range illustIds {
+	for _, pid := range illusts {
 		illusts, err := pixivClient.GetIllustInfo(app.PixivID(pid), false)
 		if err != nil {
 			fmt.Printf("ID: %s,\tERROE: %s\n", pid, err)

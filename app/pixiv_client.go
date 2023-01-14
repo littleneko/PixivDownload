@@ -154,25 +154,36 @@ type PixivClient struct {
 	header map[string]string
 }
 
-func NewPixivClient(cookie string, userAgent string, timeoutMs int32) *PixivClient {
+func NewPixivClient(cookie, userAgent string, timeoutMs int32) *PixivClient {
+	return NewPixivClientWithProxy(cookie, userAgent, nil, timeoutMs)
+}
+
+func NewPixivClientWithProxy(cookie, userAgent string, proxy *url.URL, timeoutMs int32) *PixivClient {
 	header := map[string]string{
 		"Cookie":     cookie,
 		"User-Agent": userAgent,
 	}
-	return NewPixivClientWithHeader(header, timeoutMs)
+	return NewPixivClientWithHeader(header, proxy, timeoutMs)
 }
 
-func NewPixivClientWithHeader(header map[string]string, timeoutMs int32) *PixivClient {
+func NewPixivClientWithHeader(header map[string]string, proxy *url.URL, timeoutMs int32) *PixivClient {
+	var tr *http.Transport
+	if proxy != nil {
+		tr = &http.Transport{Proxy: http.ProxyURL(proxy)}
+	} else {
+		tr = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
 	pc := &PixivClient{
 		client: &http.Client{
-			Timeout: time.Duration(timeoutMs) * time.Millisecond,
+			Timeout:   time.Duration(timeoutMs) * time.Millisecond,
+			Transport: tr,
 		},
 		header: header,
 	}
 	return pc
 }
 
-func (p *PixivClient) getRaw(url string, refer string) (*http.Response, error) {
+func (p *PixivClient) getRaw(url, refer string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Referer", refer)
 	for k, v := range p.header {
@@ -192,7 +203,7 @@ func (p *PixivClient) getRaw(url string, refer string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (p *PixivClient) getPixivResp(url string, refer string) (*PixivResponse, error) {
+func (p *PixivClient) getPixivResp(url, refer string) (*PixivResponse, error) {
 	resp, err := p.getRaw(url, refer)
 	if err != nil {
 		return nil, err
