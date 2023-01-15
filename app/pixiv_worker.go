@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/sha1"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ type PixivWorker interface {
 	Run()
 }
 
-type basePixivWorker struct {
+type pixivWorker struct {
 	options   *PixivDlOptions
 	illustMgr IllustInfoManager
 	client    *PixivClient
@@ -32,8 +33,8 @@ type basePixivWorker struct {
 	produceCnt uint64
 }
 
-func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout int32) *basePixivWorker {
-	worker := &basePixivWorker{
+func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout int32) *pixivWorker {
+	worker := &pixivWorker{
 		options:             options,
 		illustMgr:           manager,
 		userWhiteListFilter: mapset.NewSet[PixivID](),
@@ -58,7 +59,7 @@ func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout 
 	return worker
 }
 
-func (w *basePixivWorker) retry(workFunc func() bool) {
+func (w *pixivWorker) retry(workFunc func() bool) {
 	var retryTime int32 = 0
 	for {
 		ok := workFunc()
@@ -69,12 +70,14 @@ func (w *basePixivWorker) retry(workFunc func() bool) {
 			break
 		}
 		retryTime++
-		time.Sleep(time.Duration(w.options.RetryBackoffMs) * time.Millisecond)
+		r := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+		backoff := w.options.RetryBackoffMs + r.Int31n(w.options.RetryBackoffMs/10)
+		time.Sleep(time.Duration(backoff) * time.Millisecond)
 	}
 }
 
-// filterUser return true means this illust should be skipped
-func (w *basePixivWorker) filterUser(illustInfo *BasicIllustInfo) bool {
+// filterByUser return true means this illust should be skipped
+func (w *pixivWorker) filterByUser(illustInfo *IllustDigest) bool {
 	// invalid user id
 	if len(illustInfo.UserId) == 0 {
 		return false
@@ -93,7 +96,7 @@ func (w *basePixivWorker) filterUser(illustInfo *BasicIllustInfo) bool {
 	return false
 }
 
-func (w *basePixivWorker) filterIllustInfo(illust *FullIllustInfo) bool {
+func (w *pixivWorker) filterByIllustInfo(illust *IllustInfo) bool {
 	if w.options.NoR18 && illust.R18 {
 		log.Infof("[PixivWorker] Skip R18 illust: %s", illust.DigestString())
 		return true
@@ -121,7 +124,7 @@ func (w *basePixivWorker) filterIllustInfo(illust *FullIllustInfo) bool {
 	return false
 }
 
-func (w *basePixivWorker) checkIllustExist(id PixivID) (bool, error) {
+func (w *pixivWorker) checkIllustExist(id PixivID) (bool, error) {
 	exist := false
 	err := Retry(func() error {
 		var err error
@@ -131,7 +134,7 @@ func (w *basePixivWorker) checkIllustExist(id PixivID) (bool, error) {
 	return exist, err
 }
 
-func (w *basePixivWorker) checkIllustPageExist(id PixivID, page int) (bool, error) {
+func (w *pixivWorker) checkIllustPageExist(id PixivID, page int) (bool, error) {
 	exist := false
 	err := Retry(func() error {
 		var err error
@@ -141,47 +144,59 @@ func (w *basePixivWorker) checkIllustPageExist(id PixivID, page int) (bool, erro
 	return exist, err
 }
 
-func (w *basePixivWorker) saveIllustInfo(illust *FullIllustInfo, data []byte, fileName string) error {
+func (w *pixivWorker) saveIllustInfo(illust *IllustInfo, hash, filename string) error {
 	return Retry(func() error {
-		return w.illustMgr.SaveIllust(illust, fmt.Sprintf("%x", sha1.Sum(data)), fileName)
+		return w.illustMgr.SaveIllust(illust, hash, filename)
 	}, 3)
 }
 
-func (w *basePixivWorker) GetConsumeCnt() uint64 {
+func (w *pixivWorker) markIllustNotFound(id PixivID) error {
+	illust := &IllustInfo{
+		Id:        id,
+		PageIdx:   0,
+		PageCount: 0,
+		Title:     "NOT FOUND",
+	}
+	return Retry(func() error {
+		return w.illustMgr.SaveIllust(illust, "", "")
+	}, 3)
+}
+
+func (w *pixivWorker) GetConsumeCnt() uint64 {
 	return atomic.LoadUint64(&w.consumeCnt)
 }
 
-func (w *basePixivWorker) ResetConsumeCnt() {
+func (w *pixivWorker) ResetConsumeCnt() {
 	atomic.StoreUint64(&w.consumeCnt, 0)
 }
 
-func (w *basePixivWorker) GetProduceCnt() uint64 {
+func (w *pixivWorker) GetProduceCnt() uint64 {
 	return atomic.LoadUint64(&w.produceCnt)
 }
 
-func (w *basePixivWorker) ResetProduceCnt() {
+func (w *pixivWorker) ResetProduceCnt() {
 	atomic.StoreUint64(&w.produceCnt, 0)
 }
 
-func (w *basePixivWorker) ResetCnt() {
+func (w *pixivWorker) ResetCnt() {
 	w.ResetProduceCnt()
 	w.ResetConsumeCnt()
 }
 
 // BookmarksWorker process the input user id and output basic illust info of bookmarks
 type BookmarksWorker struct {
-	*basePixivWorker
+	*pixivWorker
 
 	input  <-chan PixivID // input user id
-	output chan<- *BasicIllustInfo
+	output chan<- *IllustDigest
 }
 
 func NewBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan PixivID, output chan<- *BasicIllustInfo) *BookmarksWorker {
+	input <-chan PixivID, output chan<- *IllustDigest) *BookmarksWorker {
 	worker := &BookmarksWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
-		input:           input,
-		output:          output,
+		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
+		input:       input,
+		output:      output,
 	}
 
 	return worker
@@ -190,13 +205,13 @@ func NewBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
 func (w *BookmarksWorker) Run() {
 	go func() {
 		for uid := range w.input {
-			w.ProcessBookmarks(uid)
+			w.processInput(uid)
 			atomic.AddUint64(&w.consumeCnt, 1)
 		}
 	}()
 }
 
-func (w *BookmarksWorker) ProcessBookmarks(uid PixivID) {
+func (w *BookmarksWorker) processInput(uid PixivID) {
 	fetcher := NewBookmarksFetcher(w.client, string(uid), BookmarksPageLimit)
 	for {
 		if !fetcher.HasMorePage() {
@@ -213,7 +228,7 @@ func (w *BookmarksWorker) ProcessBookmarks(uid PixivID) {
 				log.Warningf("[BookmarksWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", fetcher.CurOffset(), err)
 				return false
 			}
-			err = w.writeToQueue(bmInfos)
+			err = w.processOutput(bmInfos)
 			if err != nil {
 				log.Warningf("[BookmarksWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", fetcher.CurOffset(), err)
 				return false
@@ -225,10 +240,10 @@ func (w *BookmarksWorker) ProcessBookmarks(uid PixivID) {
 	}
 }
 
-func (w *BookmarksWorker) writeToQueue(bmInfo *BookmarksInfo) error {
+func (w *BookmarksWorker) processOutput(bmInfo *BookmarksInfo) error {
 	for idx := range bmInfo.Works {
 		illust := &bmInfo.Works[idx]
-		if w.filterUser(illust) {
+		if w.filterByUser(illust) {
 			continue
 		}
 
@@ -251,18 +266,18 @@ func (w *BookmarksWorker) writeToQueue(bmInfo *BookmarksInfo) error {
 
 // ArtistWorker process the input user id and output basic illust info of all illust of this user
 type ArtistWorker struct {
-	*basePixivWorker
+	*pixivWorker
 
 	input  <-chan PixivID // input user id
-	output chan<- *BasicIllustInfo
+	output chan<- *IllustDigest
 }
 
 func NewArtistWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan PixivID, output chan<- *BasicIllustInfo) *ArtistWorker {
+	input <-chan PixivID, output chan<- *IllustDigest) *ArtistWorker {
 	worker := &ArtistWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
-		input:           input,
-		output:          output,
+		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
+		input:       input,
+		output:      output,
 	}
 
 	return worker
@@ -271,15 +286,15 @@ func NewArtistWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
 func (w *ArtistWorker) Run() {
 	go func() {
 		for uid := range w.input {
-			w.ProcessArtist(uid)
+			w.processInput(uid)
 			atomic.AddUint64(&w.consumeCnt, 1)
 		}
 	}()
 }
 
-func (w *ArtistWorker) ProcessArtist(uid PixivID) {
+func (w *ArtistWorker) processInput(uid PixivID) {
 	w.retry(func() bool {
-		pids, err := w.client.GetUserIllusts(string(uid))
+		illustIds, err := w.client.GetUserIllusts(string(uid))
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
 			log.Warningf("[ArtistWorker] Skip user: %s, msg: %s", uid, err)
 			return true
@@ -289,103 +304,119 @@ func (w *ArtistWorker) ProcessArtist(uid PixivID) {
 			return false
 		}
 
-		log.Infof("[ArtistWorker] Success get user all ilusts, count: %d, ids: %+v", len(pids), pids)
-		for _, id := range pids {
-			exist, err := w.checkIllustExist(id)
-			if err != nil {
-				log.Errorf("[ArtistWorker] Failed to check illust exist, id: %s, msg: %s", id, err)
-				return false
-			}
-			if exist {
-				log.Debugf("[ArtistWorker] Skip exist illust, id: %s", id)
-				continue
-			}
-
-			var illust = &BasicIllustInfo{
-				Id:        id,
-				PageCount: 1,
-			}
-			w.output <- illust
-			atomic.AddUint64(&w.produceCnt, 1)
+		log.Infof("[ArtistWorker] Success get user all ilusts, count: %d, ids: %+v", len(illustIds), illustIds)
+		err = w.processOutput(illustIds)
+		if err != nil {
+			log.Warningf("[ArtistWorker] Failed to process artist user %s, retry, msg: %s", uid, err)
+			return false
 		}
 		return true
 	})
 }
 
-// IllustInfoFetchWorker process the input basic illust info and output full illust info
-type IllustInfoFetchWorker struct {
-	*basePixivWorker
-	input  <-chan *BasicIllustInfo
-	output chan<- *FullIllustInfo
+func (w *ArtistWorker) processOutput(illustIds []PixivID) error {
+	for _, id := range illustIds {
+		exist, err := w.checkIllustExist(id)
+		if err != nil {
+			log.Errorf("[ArtistWorker] Failed to check illust exist, id: %s, msg: %s", id, err)
+			return err
+		}
+		if exist {
+			log.Debugf("[ArtistWorker] Skip exist illust, id: %s", id)
+			continue
+		}
+
+		var illust = &IllustDigest{
+			Id:        id,
+			PageCount: 1,
+		}
+		w.output <- illust
+		atomic.AddUint64(&w.produceCnt, 1)
+	}
+	return nil
 }
 
-func NewIllustInfoFetchWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan *BasicIllustInfo, output chan<- *FullIllustInfo) *IllustInfoFetchWorker {
-	worker := &IllustInfoFetchWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
-		input:           input,
-		output:          output,
+// IllustInfoWorker process the input basic illust info and output full illust info
+type IllustInfoWorker struct {
+	*pixivWorker
+	input  <-chan *IllustDigest
+	output chan<- *IllustInfo
+}
+
+func NewIllustInfoWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
+	input <-chan *IllustDigest, output chan<- *IllustInfo) *IllustInfoWorker {
+	worker := &IllustInfoWorker{
+		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
+		input:       input,
+		output:      output,
 	}
 	return worker
 }
 
-func (w *IllustInfoFetchWorker) Run() {
+func (w *IllustInfoWorker) Run() {
 	for i := int32(0); i < w.options.ParseParallel; i++ {
 		go func() {
 			for illust := range w.input {
-				w.ProcessIllustInfo(illust)
+				w.processInput(illust)
 				atomic.AddUint64(&w.consumeCnt, 1)
 			}
-			log.Info("[IllustInfoFetchWorker] exit")
+			log.Info("[IllustInfoWorker] exit")
 		}()
 	}
 }
 
-func (w *IllustInfoFetchWorker) ProcessIllustInfo(illust *BasicIllustInfo) {
+func (w *IllustInfoWorker) processInput(illust *IllustDigest) {
 	w.retry(func() bool {
 		exist, err := w.checkIllustExist(illust.Id)
 		if err != nil {
-			log.Errorf("[IllustInfoFetchWorker] Failed to check illust exist, illust info: %s, msg: %s", illust.DigestString(), err)
+			log.Errorf("[IllustInfoWorker] Failed to check illust exist, illust info: %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
 		if exist {
-			log.Debugf("[IllustInfoFetchWorker] Skip exist illust, illust info: %s", illust.DigestString())
+			log.Debugf("[IllustInfoWorker] Skip exist illust, illust info: %s", illust.DigestString())
 			return true
 		}
 
 		illusts, err := w.client.GetIllustInfo(illust.Id, w.options.OnlyP0)
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
-			log.Warningf("[IllustInfoFetchWorker] Skip illust: %s, msg: %s", illust.DigestString(), err)
+			log.Warningf("[IllustInfoWorker] Skip illust: %s, msg: %s", illust.DigestString(), err)
+			if err == ErrNotFound {
+				_ = w.markIllustNotFound(illust.Id)
+			}
 			return true
 		}
 		if err != nil {
-			log.Warningf("[IllustInfoFetchWorker] Failed to get illust info: %s, msg: %s", illust.DigestString(), err)
+			log.Warningf("[IllustInfoWorker] Failed to get illust info: %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
-		log.Infof("[IllustInfoFetchWorker] Success get illust info: %s", illusts[0].DigestString())
+		log.Infof("[IllustInfoWorker] Success get illust info: %s", illusts[0].DigestString())
+		w.processOutput(illusts)
 
-		for idx := range illusts {
-			fullIllust := illusts[idx]
-			if w.filterIllustInfo(fullIllust) {
-				continue
-			}
-			w.output <- fullIllust
-			atomic.AddUint64(&w.produceCnt, 1)
-		}
 		return true
 	})
 }
 
-// IllustDownloadWorker process the input full illust info and download the illust to disk
-type IllustDownloadWorker struct {
-	*basePixivWorker
-	input <-chan *FullIllustInfo
+func (w *IllustInfoWorker) processOutput(illusts []*IllustInfo) {
+	for idx := range illusts {
+		fullIllust := illusts[idx]
+		if w.filterByIllustInfo(fullIllust) {
+			continue
+		}
+		w.output <- fullIllust
+		atomic.AddUint64(&w.produceCnt, 1)
+	}
 }
 
-func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *FullIllustInfo) *IllustDownloadWorker {
+// IllustDownloadWorker process the input full illust info and download the illust to disk
+type IllustDownloadWorker struct {
+	*pixivWorker
+	input <-chan *IllustInfo
+}
+
+func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *IllustInfo) *IllustDownloadWorker {
 	worker := &IllustDownloadWorker{
-		basePixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
-		input:           illustChan,
+		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
+		input:       illustChan,
 	}
 	return worker
 }
@@ -394,7 +425,7 @@ func (w *IllustDownloadWorker) Run() {
 	for i := int32(0); i < w.options.DownloadParallel; i++ {
 		go func() {
 			for illust := range w.input {
-				w.DownloadIllust(illust)
+				w.processInput(illust)
 				atomic.AddUint64(&w.consumeCnt, 1)
 			}
 			log.Info("[IllustDownloadWorker] exit")
@@ -402,40 +433,40 @@ func (w *IllustDownloadWorker) Run() {
 	}
 }
 
-func FormatFileName(illust *FullIllustInfo, pattern string) string {
-	fileName := filepath.Base(illust.Urls.Original)
+func FormatFileName(illust *IllustInfo, pattern string) string {
+	filename := filepath.Base(illust.Urls.Original)
 	if len(pattern) == 0 {
-		return fileName
+		return filename
 	}
-	extName := filepath.Ext(fileName)
-	pid := fileName[:len(fileName)-len(extName)]
+	fileExt := filepath.Ext(filename)
+	pid := filename[:len(filename)-len(fileExt)]
 
-	var newName = pattern
+	newName := pattern
 	newName = strings.Replace(newName, "{id}", pid, -1)
 	newName = strings.Replace(newName, "{title}", StandardizeFileName(illust.Title), -1)
 	newName = strings.Replace(newName, "{user_id}", string(illust.UserId), -1)
 	newName = strings.Replace(newName, "{user}", StandardizeFileName(illust.UserName), -1)
-	newName += extName
+	newName += fileExt
 	return newName
 }
 
-func (w *IllustDownloadWorker) writeFile(fileName string, data []byte) error {
-	dirName := filepath.Dir(fileName)
+func (w *IllustDownloadWorker) writeFile(filename string, data []byte) error {
+	dirName := filepath.Dir(filename)
 	err := CheckAndMkdir(dirName)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(fileName, data, 0644)
+	return os.WriteFile(filename, data, 0644)
 }
 
-func (w *IllustDownloadWorker) DownloadIllust(illust *FullIllustInfo) {
+func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 	if len(illust.Urls.Original) == 0 {
 		log.Warningf("[IllustDownloadWorker] Skip empty url illust: %s", illust.DigestString())
 		return
 	}
 
-	fileName := FormatFileName(illust, w.options.FilenamePattern)
-	fullFileName := filepath.Join(w.options.DownloadPath, fileName)
+	filename := FormatFileName(illust, w.options.FilenamePattern)
+	fullFilename := filepath.Join(w.options.DownloadPath, filename)
 	w.retry(func() bool {
 		exist, err := w.checkIllustPageExist(illust.Id, illust.PageIdx)
 		if err != nil {
@@ -447,7 +478,7 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *FullIllustInfo) {
 		}
 
 		start := time.Now()
-		data, err := w.client.getIllustData(illust.Urls.Original)
+		data, err := w.client.GetIllustData(illust.Urls.Original)
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
 			return true
 		}
@@ -456,19 +487,20 @@ func (w *IllustDownloadWorker) DownloadIllust(illust *FullIllustInfo) {
 			return false
 		}
 
-		err = w.writeFile(fullFileName, data)
+		err = w.writeFile(fullFilename, data)
 		if err != nil {
 			log.Warningf("[IllustDownloadWorker] Failed to write illust and retry, %s, url: %s, msg: %s", illust.DigestString(), illust.Urls.Original, err)
 			return false
 		}
 
-		err = w.saveIllustInfo(illust, data, fileName)
+		hash := fmt.Sprintf("%x", sha1.Sum(data))
+		err = w.saveIllustInfo(illust, hash, filename)
 		if err != nil {
 			log.Errorf("[IllustDownloadWorker] Failed to save illust info and retry, %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
 		elapsed := time.Since(start)
-		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, cost: %s", illust.DigestString(), fullFileName, illust.Urls.Original, elapsed)
+		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, cost: %s", illust.DigestString(), filename, illust.Urls.Original, elapsed)
 		return true
 	})
 }
