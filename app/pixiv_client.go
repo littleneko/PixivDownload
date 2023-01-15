@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -39,21 +41,21 @@ type UserInfo struct {
 	UserAccount string  `json:"userAccount"`
 }
 
-// BasicIllustInfo is the illust info get from users bookmarks or users artworks
-type BasicIllustInfo struct {
+// IllustDigest is the illust basic info get from bookmarks or artist work
+type IllustDigest struct {
 	Id        PixivID `json:"id"`
 	Title     string  `json:"title"`
 	PageCount int32   `json:"pageCount"`
 	UserInfo
 }
 
-func (bi *BasicIllustInfo) DigestString() string {
+func (bi *IllustDigest) DigestString() string {
 	return fmt.Sprintf("[id: %s, title: %s, uid: %s, uname: %s, pages: %d]", bi.Id, bi.Title, bi.UserId, bi.UserName, bi.PageCount)
 }
 
 type BookmarksInfo struct {
-	Total int32             `json:"total"`
-	Works []BasicIllustInfo `json:"works"`
+	Total int32          `json:"total"`
+	Works []IllustDigest `json:"works"`
 }
 
 type FollowingInfo struct {
@@ -69,7 +71,7 @@ type Urls struct {
 	Original string `json:"original"`
 }
 
-type FullIllustInfo struct {
+type IllustInfo struct {
 	Id            PixivID   `json:"id"`
 	PageIdx       int       `json:"curPage"`
 	Title         string    `json:"title"`
@@ -89,12 +91,12 @@ type FullIllustInfo struct {
 	UserInfo
 }
 
-func (i *FullIllustInfo) DigestString() string {
+func (i *IllustInfo) DigestString() string {
 	return fmt.Sprintf("[id: %s, page: %d, title: %s, uid: %s, uname: %s, pageCnt: %d, R18: %v, bookmarkCnt: %d, likeCnt: %d]",
 		i.Id, i.PageIdx, i.Title, i.UserId, i.UserName, i.PageCount, i.R18, i.BookmarkCount, i.LikeCount)
 }
 
-func (i *FullIllustInfo) DigestStringWithUrl() string {
+func (i *IllustInfo) DigestStringWithUrl() string {
 	return fmt.Sprintf("[id: %s, page: %d, title: %s, uid: %s, uname: %s, pageCnt: %d, R18: %v, bookmarkCnt: %d, likeCnt: %d, width: %d, height: %d, URL: %s]",
 		i.Id, i.PageIdx, i.Title, i.UserId, i.UserName, i.PageCount, i.R18, i.BookmarkCount, i.LikeCount, i.Width, i.Height, i.Urls.Original)
 }
@@ -223,6 +225,7 @@ func (p *PixivClient) getPixivResp(url, refer string) (*PixivResponse, error) {
 	return &jResp, nil
 }
 
+// GetBookmarks get the bookmarks of a user
 func (p *PixivClient) GetBookmarks(uid string, offset, limit int32) (*BookmarksInfo, error) {
 	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeBookmarks)
 	if err != nil {
@@ -242,6 +245,7 @@ func (p *PixivClient) GetBookmarks(uid string, offset, limit int32) (*BookmarksI
 	return &bookmarks, nil
 }
 
+// GetFollowing get the following of a user
 func (p *PixivClient) GetFollowing(uid string, offset, limit int32) (*FollowingInfo, error) {
 	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeFollowing)
 	if err != nil {
@@ -261,7 +265,7 @@ func (p *PixivClient) GetFollowing(uid string, offset, limit int32) (*FollowingI
 	return &following, nil
 }
 
-// GetUserIllusts get all the illust pid of the user
+// GetUserIllusts get all illusts of the user
 func (p *PixivClient) GetUserIllusts(uid string) ([]PixivID, error) {
 	allUrl := fmt.Sprintf(userAllIllustUrl, uid)
 	refer := fmt.Sprintf(userAllIllustReferUrl, uid)
@@ -285,19 +289,21 @@ func (p *PixivClient) GetUserIllusts(uid string) ([]PixivID, error) {
 	return illusts, nil
 }
 
-func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*FullIllustInfo, error) {
-	illust, err := p.getIllustBasicInfo(illustId)
+// GetIllustInfo get the illust detail for the illust id. For a multi page illust,
+// only the first page will be get if onlyP0 is true.
+func (p *PixivClient) GetIllustInfo(illustId PixivID, onlyP0 bool) ([]*IllustInfo, error) {
+	illust, err := p.getBasicIllustInfo(illustId)
 	if err != nil {
 		return nil, err
 	}
 	if illust.PageCount == 1 || onlyP0 {
-		return []*FullIllustInfo{illust}, nil
+		return []*IllustInfo{illust}, nil
 	} else {
-		return p.getIllustAllPages(illust)
+		return p.getMultiPagesIllustInfo(illust)
 	}
 }
 
-func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*FullIllustInfo, error) {
+func (p *PixivClient) getBasicIllustInfo(illustId PixivID) (*IllustInfo, error) {
 	illustUrl := fmt.Sprintf(illustInfoUrl, illustId)
 	refer := fmt.Sprintf(illustInfoReferUrl, illustId)
 	iResp, err := p.getPixivResp(illustUrl, refer)
@@ -306,7 +312,7 @@ func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*FullIllustInfo, err
 	}
 
 	var illust struct {
-		*FullIllustInfo
+		*IllustInfo
 		RawTags json.RawMessage `json:"tags"`
 	}
 	err = json.Unmarshal(iResp.Body, &illust)
@@ -362,10 +368,10 @@ func (p *PixivClient) getIllustBasicInfo(illustId PixivID) (*FullIllustInfo, err
 	}
 	illust.R18 = r18
 
-	return illust.FullIllustInfo, nil
+	return illust.IllustInfo, nil
 }
 
-func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo, error) {
+func (p *PixivClient) getMultiPagesIllustInfo(seed *IllustInfo) ([]*IllustInfo, error) {
 	illustUrl := fmt.Sprintf(illustPagesUrl, seed.Id)
 	refer := fmt.Sprintf(illustInfoReferUrl, seed.Id)
 	iResp, err := p.getPixivResp(illustUrl, refer)
@@ -384,7 +390,7 @@ func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo
 		return nil, ErrFailedUnmarshal
 	}
 
-	var illusts []*FullIllustInfo
+	var illusts []*IllustInfo
 	for idx := range illustPageBody {
 		illust := *seed
 		illust.PageIdx = idx
@@ -396,7 +402,7 @@ func (p *PixivClient) getIllustAllPages(seed *FullIllustInfo) ([]*FullIllustInfo
 	return illusts, nil
 }
 
-func (p *PixivClient) getIllustData(url string) ([]byte, error) {
+func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
 	resp, err := p.getRaw(url, illustDownloadReferUrl)
 	if err != nil {
 		return nil, err
@@ -409,6 +415,21 @@ func (p *PixivClient) getIllustData(url string) ([]byte, error) {
 	return data, nil
 }
 
+func (p *PixivClient) DownloadIllust(url, filename string) error {
+	data, err := p.GetIllustData(url)
+	if err != nil {
+		return err
+	}
+
+	dirName := filepath.Dir(filename)
+	err = CheckAndMkdir(dirName)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, 0644)
+}
+
+// BookmarksFetcher is a wrapper of PixivClient.GetBookmarks, it records the bookmarks page offset and num
 type BookmarksFetcher struct {
 	client    *PixivClient
 	uid       string
@@ -453,6 +474,7 @@ func (bf *BookmarksFetcher) GetNextPageBookmarks() (*BookmarksInfo, error) {
 	return bmInfo, nil
 }
 
+// FollowingFetcher is a wrapper of PixivClient.GetFollowing, it records the following page offset and num
 type FollowingFetcher struct {
 	client    *PixivClient
 	uid       string
@@ -484,6 +506,10 @@ func (ff *FollowingFetcher) HasMorePage() bool {
 
 func (ff *FollowingFetcher) GetNextPageFollowing() (*FollowingInfo, error) {
 	folInfo, err := ff.client.GetFollowing(ff.uid, ff.curOffset, ff.limit)
+	// mark this user as invalid user, it has no next page
+	if err == ErrNotFound {
+		ff.total = 0
+	}
 	if err != nil {
 		return nil, err
 	}

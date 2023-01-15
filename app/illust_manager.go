@@ -43,8 +43,8 @@ type IllustInfoManager interface {
 	GetIllustCount(pid string) (int32, error)
 	IsIllustExist(pid string) (bool, error)
 	IsIllustPageExist(pid string, page int) (bool, error)
-	SaveIllust(illust *FullIllustInfo, hash string, filename string) error
-	GetIllustInfo(pid string, page int) (*FullIllustInfo, error)
+	SaveIllust(illust *IllustInfo, hash string, filename string) error
+	GetIllustInfo(pid string, page int) (*IllustInfo, error)
 	CheckDatabaseAndFile() error
 }
 
@@ -117,11 +117,11 @@ func (d *DummyIllustInfoMgr) IsIllustPageExist(id string, page int) (bool, error
 	return false, nil
 }
 
-func (d *DummyIllustInfoMgr) SaveIllust(*FullIllustInfo, string, string) error {
+func (d *DummyIllustInfoMgr) SaveIllust(*IllustInfo, string, string) error {
 	return nil
 }
 
-func (d *DummyIllustInfoMgr) GetIllustInfo(id string, page int) (*FullIllustInfo, error) {
+func (d *DummyIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, error) {
 	return nil, errors.New("not found")
 }
 
@@ -226,7 +226,7 @@ func (ps *SqliteIllustInfoMgr) IsIllustPageExist(pid string, page int) (bool, er
 	return count == 1, nil
 }
 
-func (ps *SqliteIllustInfoMgr) SaveIllust(illust *FullIllustInfo, hash string, filename string) error {
+func (ps *SqliteIllustInfoMgr) SaveIllust(illust *IllustInfo, hash string, filename string) error {
 	tags, _ := json.Marshal(illust.Tags)
 	_, err := ps.db.Exec(saveIllustSql,
 		illust.Id, illust.PageIdx, illust.Title, illust.Urls.Original, illust.R18, tags, illust.Description, illust.Width, illust.Height,
@@ -238,14 +238,14 @@ func (ps *SqliteIllustInfoMgr) SaveIllust(illust *FullIllustInfo, hash string, f
 	return nil
 }
 
-func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*FullIllustInfo, error) {
+func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, error) {
 	rows, err := ps.db.Query(getIllustSql, id, page)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
-	var illust FullIllustInfo
+	var illust IllustInfo
 	var (
 		hash     string
 		filename string

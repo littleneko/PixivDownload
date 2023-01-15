@@ -12,34 +12,34 @@ type PixivDownloader interface {
 
 // IllustDownloader download the illust by pid
 type IllustDownloader struct {
-	illustInfoFetchWorker *IllustInfoFetchWorker
-	illustDownloadWorker  *IllustDownloadWorker
+	illustInfoWorker     *IllustInfoWorker
+	illustDownloadWorker *IllustDownloadWorker
 
 	options *PixivDlOptions
 
-	basicIllustChan chan *BasicIllustInfo
-	fullIllustChan  chan *FullIllustInfo
+	basicIllustChan chan *IllustDigest
+	fullIllustChan  chan *IllustInfo
 }
 
 func NewIllustDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *IllustDownloader {
-	basicIllustChan := make(chan *BasicIllustInfo, 50)
-	fullIllustChan := make(chan *FullIllustInfo, 100)
+	basicIllustChan := make(chan *IllustDigest, 50)
+	fullIllustChan := make(chan *IllustInfo, 100)
 
 	downloader := &IllustDownloader{
-		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
-		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
-		options:               options,
-		basicIllustChan:       basicIllustChan,
-		fullIllustChan:        fullIllustChan,
+		illustInfoWorker:     NewIllustInfoWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker: NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:              options,
+		basicIllustChan:      basicIllustChan,
+		fullIllustChan:       fullIllustChan,
 	}
 	return downloader
 }
 
 func (d *IllustDownloader) waitDone(illustCnt uint64) {
 	for {
-		if d.illustInfoFetchWorker.GetConsumeCnt() == illustCnt &&
-			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
-			d.illustInfoFetchWorker.ResetCnt()
+		if d.illustInfoWorker.GetConsumeCnt() == illustCnt &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoWorker.GetProduceCnt() {
+			d.illustInfoWorker.ResetCnt()
 			d.illustDownloadWorker.ResetCnt()
 			return
 		}
@@ -52,12 +52,12 @@ func (d *IllustDownloader) Start() {
 		return
 	}
 
-	d.illustInfoFetchWorker.Run()
+	d.illustInfoWorker.Run()
 	d.illustDownloadWorker.Run()
 
 	for {
 		for _, pid := range d.options.DownloadIllustIds {
-			d.basicIllustChan <- &BasicIllustInfo{
+			d.basicIllustChan <- &IllustDigest{
 				Id:        PixivID(pid),
 				PageCount: 1,
 			}
@@ -80,30 +80,30 @@ func (d *IllustDownloader) Close() {
 
 // BookmarksDownloader download the illust of users bookmarks
 type BookmarksDownloader struct {
-	bookmarksWorker       *BookmarksWorker
-	illustInfoFetchWorker *IllustInfoFetchWorker
-	illustDownloadWorker  *IllustDownloadWorker
+	bookmarksWorker      *BookmarksWorker
+	illustInfoWorker     *IllustInfoWorker
+	illustDownloadWorker *IllustDownloadWorker
 
 	options *PixivDlOptions
 
 	uidChan         chan PixivID
-	basicIllustChan chan *BasicIllustInfo
-	fullIllustChan  chan *FullIllustInfo
+	basicIllustChan chan *IllustDigest
+	fullIllustChan  chan *IllustInfo
 }
 
 func NewBookmarksDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *BookmarksDownloader {
 	uidChan := make(chan PixivID, 10)
-	basicIllustChan := make(chan *BasicIllustInfo, 50)
-	fullIllustChan := make(chan *FullIllustInfo, 100)
+	basicIllustChan := make(chan *IllustDigest, 50)
+	fullIllustChan := make(chan *IllustInfo, 100)
 
 	downloader := &BookmarksDownloader{
-		bookmarksWorker:       NewBookmarksWorker(options, illustMgr, uidChan, basicIllustChan),
-		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
-		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
-		options:               options,
-		uidChan:               uidChan,
-		basicIllustChan:       basicIllustChan,
-		fullIllustChan:        fullIllustChan,
+		bookmarksWorker:      NewBookmarksWorker(options, illustMgr, uidChan, basicIllustChan),
+		illustInfoWorker:     NewIllustInfoWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker: NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:              options,
+		uidChan:              uidChan,
+		basicIllustChan:      basicIllustChan,
+		fullIllustChan:       fullIllustChan,
 	}
 	return downloader
 }
@@ -111,10 +111,10 @@ func NewBookmarksDownloader(options *PixivDlOptions, illustMgr IllustInfoManager
 func (d *BookmarksDownloader) waitDone(userCnt uint64) {
 	for {
 		if d.bookmarksWorker.GetConsumeCnt() == userCnt &&
-			d.illustInfoFetchWorker.GetConsumeCnt() == d.bookmarksWorker.GetProduceCnt() &&
-			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
+			d.illustInfoWorker.GetConsumeCnt() == d.bookmarksWorker.GetProduceCnt() &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoWorker.GetProduceCnt() {
 			d.bookmarksWorker.ResetCnt()
-			d.illustInfoFetchWorker.ResetCnt()
+			d.illustInfoWorker.ResetCnt()
 			d.illustDownloadWorker.ResetCnt()
 			return
 		}
@@ -128,7 +128,7 @@ func (d *BookmarksDownloader) Start() {
 	}
 
 	d.bookmarksWorker.Run()
-	d.illustInfoFetchWorker.Run()
+	d.illustInfoWorker.Run()
 	d.illustDownloadWorker.Run()
 
 	for {
@@ -154,30 +154,30 @@ func (d *BookmarksDownloader) Close() {
 
 // ArtistDownloader download all the illust of users
 type ArtistDownloader struct {
-	artistWorker          *ArtistWorker
-	illustInfoFetchWorker *IllustInfoFetchWorker
-	illustDownloadWorker  *IllustDownloadWorker
+	artistWorker         *ArtistWorker
+	illustInfoWorker     *IllustInfoWorker
+	illustDownloadWorker *IllustDownloadWorker
 
 	options *PixivDlOptions
 
 	uidChan         chan PixivID
-	basicIllustChan chan *BasicIllustInfo
-	fullIllustChan  chan *FullIllustInfo
+	basicIllustChan chan *IllustDigest
+	fullIllustChan  chan *IllustInfo
 }
 
 func NewArtistDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *ArtistDownloader {
 	uidChan := make(chan PixivID, 10)
-	basicIllustChan := make(chan *BasicIllustInfo, 50)
-	fullIllustChan := make(chan *FullIllustInfo, 100)
+	basicIllustChan := make(chan *IllustDigest, 50)
+	fullIllustChan := make(chan *IllustInfo, 100)
 
 	downloader := &ArtistDownloader{
-		artistWorker:          NewArtistWorker(options, illustMgr, uidChan, basicIllustChan),
-		illustInfoFetchWorker: NewIllustInfoFetchWorker(options, illustMgr, basicIllustChan, fullIllustChan),
-		illustDownloadWorker:  NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
-		options:               options,
-		uidChan:               uidChan,
-		basicIllustChan:       basicIllustChan,
-		fullIllustChan:        fullIllustChan,
+		artistWorker:         NewArtistWorker(options, illustMgr, uidChan, basicIllustChan),
+		illustInfoWorker:     NewIllustInfoWorker(options, illustMgr, basicIllustChan, fullIllustChan),
+		illustDownloadWorker: NewIllustDownloadWorker(options, illustMgr, fullIllustChan),
+		options:              options,
+		uidChan:              uidChan,
+		basicIllustChan:      basicIllustChan,
+		fullIllustChan:       fullIllustChan,
 	}
 	return downloader
 }
@@ -185,10 +185,10 @@ func NewArtistDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *
 func (d *ArtistDownloader) waitDone(userCnt uint64) {
 	for {
 		if d.artistWorker.GetConsumeCnt() == userCnt &&
-			d.illustInfoFetchWorker.GetConsumeCnt() == d.artistWorker.GetProduceCnt() &&
-			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoFetchWorker.GetProduceCnt() {
+			d.illustInfoWorker.GetConsumeCnt() == d.artistWorker.GetProduceCnt() &&
+			d.illustDownloadWorker.GetConsumeCnt() == d.illustInfoWorker.GetProduceCnt() {
 			d.artistWorker.ResetCnt()
-			d.illustInfoFetchWorker.ResetCnt()
+			d.illustInfoWorker.ResetCnt()
 			d.illustDownloadWorker.ResetCnt()
 			return
 		}
@@ -202,7 +202,7 @@ func (d *ArtistDownloader) Start() {
 	}
 
 	d.artistWorker.Run()
-	d.illustInfoFetchWorker.Run()
+	d.illustInfoWorker.Run()
 	d.illustDownloadWorker.Run()
 
 	for {
