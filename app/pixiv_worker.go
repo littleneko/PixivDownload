@@ -1,11 +1,8 @@
 package app
 
 import (
-	"crypto/sha1"
-	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -450,15 +447,6 @@ func FormatFileName(illust *IllustInfo, pattern string) string {
 	return newName
 }
 
-func (w *IllustDownloadWorker) writeFile(filename string, data []byte) error {
-	dirName := filepath.Dir(filename)
-	err := CheckAndMkdir(dirName)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filename, data, 0644)
-}
-
 func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 	if len(illust.Urls.Original) == 0 {
 		log.Warningf("[IllustDownloadWorker] Skip empty url illust: %s", illust.DigestString())
@@ -478,7 +466,7 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 		}
 
 		start := time.Now()
-		data, err := w.client.GetIllustData(illust.Urls.Original)
+		size, err := w.client.DownloadIllust(illust.Urls.Original, fullFilename)
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
 			return true
 		}
@@ -487,20 +475,17 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 			return false
 		}
 
-		err = w.writeFile(fullFilename, data)
+		hash, err := FileSha1Sum(fullFilename)
 		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to write illust and retry, %s, url: %s, msg: %s", illust.DigestString(), illust.Urls.Original, err)
-			return false
+			log.Warningf("[IllustDownloadWorker] Failed to get sha1 sum of file %s, %s", fullFilename, err)
 		}
-
-		hash := fmt.Sprintf("%x", sha1.Sum(data))
 		err = w.saveIllustInfo(illust, hash, filename)
 		if err != nil {
 			log.Errorf("[IllustDownloadWorker] Failed to save illust info and retry, %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
 		elapsed := time.Since(start)
-		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, cost: %s", illust.DigestString(), filename, illust.Urls.Original, elapsed)
+		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, cost: %s, size: %d", illust.DigestString(), filename, illust.Urls.Original, elapsed, size)
 		return true
 	})
 }

@@ -211,7 +211,10 @@ func (p *PixivClient) getPixivResp(url, refer string) (*PixivResponse, error) {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -402,12 +405,16 @@ func (p *PixivClient) getMultiPagesIllustInfo(seed *IllustInfo) ([]*IllustInfo, 
 	return illusts, nil
 }
 
+// GetIllustData return all the illust bytes, may be OOM
 func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
 	resp, err := p.getRaw(url, illustDownloadReferUrl)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -415,18 +422,31 @@ func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
 	return data, nil
 }
 
-func (p *PixivClient) DownloadIllust(url, filename string) error {
-	data, err := p.GetIllustData(url)
+func (p *PixivClient) DownloadIllust(url, filename string) (int64, error) {
+	dirName := filepath.Dir(filename)
+	err := CheckAndMkdir(dirName)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	dirName := filepath.Dir(filename)
-	err = CheckAndMkdir(dirName)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return os.WriteFile(filename, data, 0644)
+
+	defer func() {
+		_ = file.Close()
+	}()
+
+	resp, err := p.getRaw(url, illustDownloadReferUrl)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	return io.Copy(file, resp.Body)
 }
 
 // BookmarksFetcher is a wrapper of PixivClient.GetBookmarks, it records the bookmarks page offset and num

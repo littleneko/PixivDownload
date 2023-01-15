@@ -1,6 +1,9 @@
 package app
 
 import (
+	"crypto/sha1"
+	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -35,4 +38,22 @@ func StandardizeFileName(name string) string {
 		newName = strings.Replace(newName, c, "_", -1)
 	}
 	return newName
+}
+
+func FileSha1Sum(filename string) (string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	h := sha1.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", nil
+	}
+
+	sum := fmt.Sprintf("%x", h.Sum(nil))
+	return sum, nil
 }
