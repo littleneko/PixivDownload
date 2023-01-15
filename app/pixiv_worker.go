@@ -154,7 +154,7 @@ func (w *pixivWorker) markIllustNotFound(id PixivID) error {
 	illust := &IllustInfo{
 		Id:        id,
 		PageIdx:   0,
-		PageCount: 0,
+		PageCount: 1,
 		Title:     "NOT FOUND",
 	}
 	return Retry(func() error {
