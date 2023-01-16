@@ -18,10 +18,10 @@ download-timeout-ms: 600000
 cookie: "PHPSESSID=ABCXYZ"
 user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
 
-download-bookmarks-uids: [ 123456 ]
-download-following-uids: [ ]
-download-artist-uids: [ ]
-download-illust-ids: [ ]
+dl-bookmarks-uids: [ 123456 ]
+dl-following-uids: [ ]
+dl-artist-uids: [ ]
+dl-illust-ids: [ ]
 
 user-white-list: [ ]
 user-block-list: [ ]

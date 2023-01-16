@@ -1,5 +1,7 @@
 package app
 
+import "encoding/json"
+
 type PixivDlOptions struct {
 	Cookie    string `mapstructure:"cookie"`
 	UserAgent string `mapstructure:"user-agent"`
@@ -20,10 +22,10 @@ type PixivDlOptions struct {
 	ParseTimeoutMs    int32 `mapstructure:"parse-timeout-ms"`
 	DownloadTimeoutMs int32 `mapstructure:"download-timeout-ms"`
 
-	DownloadBookmarksUserIds []string `mapstructure:"download-bookmarks-uids"`
-	DownloadFollowingUserIds []string `mapstructure:"download-following-uids"`
-	DownloadArtistUserIds    []string `mapstructure:"download-artist-uids"`
-	DownloadIllustIds        []string `mapstructure:"download-illust-ids"`
+	DownloadBookmarksUserIds []string `mapstructure:"dl-bookmarks-uids"`
+	DownloadFollowingUserIds []string `mapstructure:"dl-following-uids"`
+	DownloadArtistUserIds    []string `mapstructure:"dl-artist-uids"`
+	DownloadIllustIds        []string `mapstructure:"dl-illust-ids"`
 
 	UserWhiteList []string `mapstructure:"user-white-list"`
 	UserBlockList []string `mapstructure:"user-block-list"`
@@ -33,4 +35,14 @@ type PixivDlOptions struct {
 	BookmarkGt int  `mapstructure:"bookmark-gt"`
 	LikeGt     int  `mapstructure:"like-gt"`
 	PixelGt    int  `mapstructure:"pixel-gt"`
+}
+
+func (p *PixivDlOptions) ToJson(indent bool) string {
+	var j []byte
+	if indent {
+		j, _ = json.MarshalIndent(p, "", "  ")
+	} else {
+		j, _ = json.Marshal(p)
+	}
+	return string(j)
 }
