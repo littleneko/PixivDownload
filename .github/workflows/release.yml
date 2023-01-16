@@ -4,6 +4,9 @@ on:
   release:
     types:
       - created
+  pull_request:
+    branches:
+      - 'main'
 
 jobs:
   build:
@@ -44,4 +47,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: bin/*
-          draft: true
+          draft: false
