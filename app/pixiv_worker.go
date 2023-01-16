@@ -466,7 +466,7 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 		}
 
 		start := time.Now()
-		size, err := w.client.DownloadIllust(illust.Urls.Original, fullFilename)
+		size, hash, err := w.client.DownloadIllust(illust.Urls.Original, fullFilename)
 		if err == ErrNotFound || err == ErrFailedUnmarshal {
 			return true
 		}
@@ -475,10 +475,6 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 			return false
 		}
 
-		hash, err := FileSha1Sum(fullFilename)
-		if err != nil {
-			log.Warningf("[IllustDownloadWorker] Failed to get sha1 sum of file %s, %s", fullFilename, err)
-		}
 		err = w.saveIllustInfo(illust, hash, filename)
 		if err != nil {
 			log.Errorf("[IllustDownloadWorker] Failed to save illust info and retry, %s, msg: %s", illust.DigestString(), err)
