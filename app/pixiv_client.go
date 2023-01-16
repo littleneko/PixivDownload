@@ -157,19 +157,11 @@ type PixivClient struct {
 	header map[string]string
 }
 
-func NewPixivClient(cookie, userAgent string, timeoutMs int32) *PixivClient {
-	return NewPixivClientWithProxy(cookie, userAgent, nil, timeoutMs)
+func NewPixivClient(timeoutMs int32) *PixivClient {
+	return NewPixivClientWithProxy(nil, timeoutMs)
 }
 
-func NewPixivClientWithProxy(cookie, userAgent string, proxy *url.URL, timeoutMs int32) *PixivClient {
-	header := map[string]string{
-		"Cookie":     cookie,
-		"User-Agent": userAgent,
-	}
-	return NewPixivClientWithHeader(header, proxy, timeoutMs)
-}
-
-func NewPixivClientWithHeader(header map[string]string, proxy *url.URL, timeoutMs int32) *PixivClient {
+func NewPixivClientWithProxy(proxy *url.URL, timeoutMs int32) *PixivClient {
 	var tr *http.Transport
 	if proxy != nil {
 		tr = &http.Transport{Proxy: http.ProxyURL(proxy)}
@@ -181,9 +173,25 @@ func NewPixivClientWithHeader(header map[string]string, proxy *url.URL, timeoutM
 			Timeout:   time.Duration(timeoutMs) * time.Millisecond,
 			Transport: tr,
 		},
-		header: header,
+		header: map[string]string{},
 	}
 	return pc
+}
+
+func (p *PixivClient) SetHeader(header map[string]string) {
+	p.header = header
+}
+
+func (p *PixivClient) AddHeader(key, value string) {
+	p.header[key] = value
+}
+
+func (p *PixivClient) SetCookie(value string) {
+	p.AddHeader("Cookie", value)
+}
+
+func (p *PixivClient) SetUserAgent(value string) {
+	p.AddHeader("User-Agent", value)
 }
 
 func (p *PixivClient) getRaw(url, refer string) (*http.Response, error) {
@@ -229,8 +237,8 @@ func (p *PixivClient) getPixivResp(url, refer string) (*PixivResponse, error) {
 	return &jResp, nil
 }
 
-// GetBookmarks get the bookmarks of a user
-func (p *PixivClient) GetBookmarks(uid string, offset, limit int32) (*BookmarksInfo, error) {
+// GetUserBookmarks get the bookmarks of a user
+func (p *PixivClient) GetUserBookmarks(uid string, offset, limit int32) (*BookmarksInfo, error) {
 	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeBookmarks)
 	if err != nil {
 		return nil, err
@@ -249,8 +257,8 @@ func (p *PixivClient) GetBookmarks(uid string, offset, limit int32) (*BookmarksI
 	return &bookmarks, nil
 }
 
-// GetFollowing get the following of a user
-func (p *PixivClient) GetFollowing(uid string, offset, limit int32) (*FollowingInfo, error) {
+// GetUserFollowing get the following of a user
+func (p *PixivClient) GetUserFollowing(uid string, offset, limit int32) (*FollowingInfo, error) {
 	bUrl, err := genPageUrl(uid, offset, limit, pageUrlTypeFollowing)
 	if err != nil {
 		return nil, err
@@ -283,7 +291,15 @@ func (p *PixivClient) GetUserIllusts(uid string) ([]PixivID, error) {
 	}
 	err = json.Unmarshal(resp.Body, &body)
 	if err != nil {
-		return nil, ErrFailedUnmarshal
+		// if the user has no illust, the json value type is list?
+		var body struct {
+			Illusts []PixivID `json:"illusts"`
+		}
+		err = json.Unmarshal(resp.Body, &body)
+		if err != nil {
+			return nil, ErrFailedUnmarshal
+		}
+		return body.Illusts, nil
 	}
 
 	illusts := make([]PixivID, 0, len(body.Illusts))
@@ -406,29 +422,29 @@ func (p *PixivClient) getMultiPagesIllustInfo(seed *IllustInfo) ([]*IllustInfo, 
 	return illusts, nil
 }
 
-// GetIllustData return all the illust bytes, may be OOM
-func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
-	resp, err := p.getRaw(url, illustDownloadReferUrl)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func (p *PixivClient) GetIllust(url string) (io.Reader, error) {
+func (p *PixivClient) GetIllust(url string) (io.ReadCloser, error) {
 	resp, err := p.getRaw(url, illustDownloadReferUrl)
 	if err != nil {
 		return nil, err
 	}
 	return resp.Body, nil
+}
+
+// GetIllustData return all the illust bytes, may be OOM
+func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
+	resp, err := p.GetIllust(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = resp.Close()
+	}()
+
+	data, err := io.ReadAll(resp)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // DownloadIllust download the illust to filename, return the file size and sha1 sum
@@ -463,8 +479,7 @@ func (p *PixivClient) DownloadIllust(url, filename string) (int64, string, error
 	return size, sum, err
 }
 
-// BookmarksFetcher is a wrapper of PixivClient.GetBookmarks, it records the bookmarks page offset and num
-type BookmarksFetcher struct {
+type pixivPageClient struct {
 	client    *PixivClient
 	uid       string
 	limit     int32
@@ -472,83 +487,82 @@ type BookmarksFetcher struct {
 	curOffset int32
 }
 
-func NewBookmarksFetcher(client *PixivClient, uid string, limit int32) *BookmarksFetcher {
-	return &BookmarksFetcher{
-		client:    client,
-		uid:       uid,
-		limit:     limit,
-		total:     -1,
-		curOffset: 0,
+func (pc *pixivPageClient) CurOffset() int32 {
+	return pc.curOffset
+}
+
+func (pc *pixivPageClient) Total() int32 {
+	return pc.total
+}
+
+func (pc *pixivPageClient) MoveToNextPage() {
+	pc.curOffset += pc.limit
+}
+
+func (pc *pixivPageClient) HasMorePage() bool {
+	return pc.total == -1 || pc.curOffset < pc.total
+}
+
+// PixivBookmarksPageClient is a wrapper of PixivClient.GetUserBookmarks, it records the bookmarks page offset and num
+type PixivBookmarksPageClient struct {
+	pixivPageClient
+}
+
+func NewBookmarksPageClient(client *PixivClient, uid string, limit int32) *PixivBookmarksPageClient {
+	return &PixivBookmarksPageClient{
+		pixivPageClient: pixivPageClient{
+			client:    client,
+			uid:       uid,
+			limit:     limit,
+			total:     -1,
+			curOffset: 0,
+		},
 	}
 }
-func (bf *BookmarksFetcher) CurOffset() int32 {
-	return bf.curOffset
-}
 
-func (bf *BookmarksFetcher) MoveToNextPage() {
-	bf.curOffset += bf.limit
-}
-
-func (bf *BookmarksFetcher) HasMorePage() bool {
-	return bf.total == -1 || bf.curOffset < bf.total
-}
-
-func (bf *BookmarksFetcher) GetNextPageBookmarks() (*BookmarksInfo, error) {
-	bmInfo, err := bf.client.GetBookmarks(bf.uid, bf.curOffset, bf.limit)
+func (bpc *PixivBookmarksPageClient) GetNextPageBookmarks() (*BookmarksInfo, error) {
+	bmInfo, err := bpc.client.GetUserBookmarks(bpc.uid, bpc.curOffset, bpc.limit)
 	// mark this user as invalid user, it has no next page
 	if err == ErrNotFound {
-		bf.total = 0
+		bpc.total = 0
 	}
 	if err != nil {
 		return nil, err
 	}
-	if bmInfo.Total > 0 {
-		bf.total = bmInfo.Total
+	if bmInfo.Total > bpc.total {
+		bpc.total = bmInfo.Total
 	}
 	return bmInfo, nil
 }
 
-// FollowingFetcher is a wrapper of PixivClient.GetFollowing, it records the following page offset and num
-type FollowingFetcher struct {
-	client    *PixivClient
-	uid       string
-	limit     int32
-	total     int32
-	curOffset int32
+// PixivFollowingPageClient is a wrapper of PixivClient.GetUserFollowing, it records the bookmarks page offset and num
+type PixivFollowingPageClient struct {
+	pixivPageClient
 }
 
-func NewFollowingFetcher(client *PixivClient, uid string, limit int32) *FollowingFetcher {
-	return &FollowingFetcher{
-		client:    client,
-		uid:       uid,
-		limit:     limit,
-		total:     -1,
-		curOffset: 0,
+func NewFollowingPageClient(client *PixivClient, uid string, limit int32) *PixivFollowingPageClient {
+	return &PixivFollowingPageClient{
+		pixivPageClient: pixivPageClient{
+			client:    client,
+			uid:       uid,
+			limit:     limit,
+			total:     -1,
+			curOffset: 0,
+		},
 	}
 }
-func (ff *FollowingFetcher) CurOffset() int32 {
-	return ff.curOffset
-}
 
-func (ff *FollowingFetcher) MoveToNextPage() {
-	ff.curOffset += ff.limit
-}
-
-func (ff *FollowingFetcher) HasMorePage() bool {
-	return ff.total == -1 || ff.curOffset < ff.total
-}
-
-func (ff *FollowingFetcher) GetNextPageFollowing() (*FollowingInfo, error) {
-	folInfo, err := ff.client.GetFollowing(ff.uid, ff.curOffset, ff.limit)
+func (fpc *PixivFollowingPageClient) GetNextPageFollowing() (*FollowingInfo, error) {
+	bmInfo, err := fpc.client.GetUserFollowing(fpc.uid, fpc.curOffset, fpc.limit)
 	// mark this user as invalid user, it has no next page
 	if err == ErrNotFound {
-		ff.total = 0
+		fpc.total = 0
 	}
 	if err != nil {
 		return nil, err
 	}
-	if folInfo.Total > 0 {
-		ff.total = folInfo.Total
+	if bmInfo.Total > fpc.total {
+		fpc.total = bmInfo.Total
 	}
-	return folInfo, nil
+	return bmInfo, nil
 }

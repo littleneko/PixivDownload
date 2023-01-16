@@ -68,6 +68,8 @@ func init() {
 	err := viper.BindPFlags(rootCmd.PersistentFlags())
 	cobra.CheckErr(err)
 
+	err = viper.BindPFlags(downloadCmd.PersistentFlags())
+	cobra.CheckErr(err)
 	err = viper.BindPFlags(downloadCmd.Flags())
 	cobra.CheckErr(err)
 

@@ -42,9 +42,15 @@ func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout 
 
 	if len(options.Proxy) > 0 {
 		proxy, _ := url.Parse(options.Proxy)
-		worker.client = NewPixivClientWithProxy(options.Cookie, options.UserAgent, proxy, timeout)
+		worker.client = NewPixivClientWithProxy(proxy, timeout)
 	} else {
-		worker.client = NewPixivClient(options.Cookie, options.UserAgent, timeout)
+		worker.client = NewPixivClient(timeout)
+	}
+	if len(options.Cookie) > 0 {
+		worker.client.SetCookie(options.Cookie)
+	}
+	if len(options.UserAgent) > 0 {
+		worker.client.SetUserAgent(options.UserAgent)
 	}
 
 	for _, uid := range options.UserWhiteList {
@@ -209,31 +215,31 @@ func (w *BookmarksWorker) Run() {
 }
 
 func (w *BookmarksWorker) processInput(uid PixivID) {
-	fetcher := NewBookmarksFetcher(w.client, string(uid), BookmarksPageLimit)
+	bookmarkClient := NewBookmarksPageClient(w.client, string(uid), BookmarksPageLimit)
 	for {
-		if !fetcher.HasMorePage() {
+		if !bookmarkClient.HasMorePage() {
 			log.Infof("[BookmarksWorker] End scan all bookmarks for uid '%s'", uid)
 			break
 		}
 		w.retry(func() bool {
-			bmInfos, err := fetcher.GetNextPageBookmarks()
+			bmInfos, err := bookmarkClient.GetNextPageBookmarks()
 			if err == ErrNotFound || err == ErrFailedUnmarshal {
-				log.Warningf("[BookmarksWorker] Skip bookmarks page, offset: %d, msg: %s", fetcher.CurOffset(), err)
+				log.Warningf("[BookmarksWorker] Skip bookmarks page, offset: %d, msg: %s", bookmarkClient.CurOffset(), err)
 				return true
 			}
 			if err != nil {
-				log.Warningf("[BookmarksWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", fetcher.CurOffset(), err)
+				log.Warningf("[BookmarksWorker] Failed to get bookmarks, offset: %d, retry, msg: %s", bookmarkClient.CurOffset(), err)
 				return false
 			}
 			err = w.processOutput(bmInfos)
 			if err != nil {
-				log.Warningf("[BookmarksWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", fetcher.CurOffset(), err)
+				log.Warningf("[BookmarksWorker] Failed to process bookmarks, offset: %d, retry, msg: %s", bookmarkClient.CurOffset(), err)
 				return false
 			}
-			log.Infof("[BookmarksWorker] Success get bookmarks, offset: %d", fetcher.CurOffset())
+			log.Infof("[BookmarksWorker] Success get bookmarks, offset: %d, total: %d", bookmarkClient.CurOffset(), bookmarkClient.Total())
 			return true
 		})
-		fetcher.MoveToNextPage()
+		bookmarkClient.MoveToNextPage()
 	}
 }
 
@@ -386,7 +392,7 @@ func (w *IllustInfoWorker) processInput(illust *IllustDigest) {
 			log.Warningf("[IllustInfoWorker] Failed to get illust info: %s, msg: %s", illust.DigestString(), err)
 			return false
 		}
-		log.Infof("[IllustInfoWorker] Success get illust info: %s", illusts[0].DigestString())
+		log.Debugf("[IllustInfoWorker] Success get illust info: %s", illusts[0].DigestString())
 		w.processOutput(illusts)
 
 		return true
@@ -481,7 +487,7 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 			return false
 		}
 		elapsed := time.Since(start)
-		log.Infof("[IllustDownloadWorker] Success download illust: %s, filename: %s, url: %s, cost: %s, size: %d", illust.DigestString(), filename, illust.Urls.Original, elapsed, size)
+		log.Infof("[IllustDownloadWorker] Success download illust: %s, cost: %s, size: %dKB, filename: %s, URL: %s", illust.DigestString(), elapsed, size/1024, filename, illust.Urls.Original)
 		return true
 	})
 }

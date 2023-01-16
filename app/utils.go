@@ -30,7 +30,7 @@ func CheckAndMkdir(path string) error {
 	return nil
 }
 
-var illegalFileNameChar = [...]string{"*", "\"", "<", ">", "?", "\\", "|", "/", ":"}
+var illegalFileNameChar = [...]string{"*", "\"", "<", ">", "?", "\\", "|", "/", ":", " "}
 
 func StandardizeFileName(name string) string {
 	newName := name

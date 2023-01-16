@@ -8,10 +8,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"net/url"
 	"pixiv/app"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var shortMsg = false
@@ -61,13 +62,21 @@ func buildPixivClient() *app.PixivClient {
 	proxy := viper.GetString("proxy")
 	cookie := viper.GetString("cookie")
 	ua := viper.GetString("user-agent")
+	var client *app.PixivClient
 	if len(proxy) > 0 {
 		proxyUrl, err := url.Parse(proxy)
 		cobra.CheckErr(err)
-		return app.NewPixivClientWithProxy(cookie, ua, proxyUrl, 5000)
+		client = app.NewPixivClientWithProxy(proxyUrl, 5000)
 	} else {
-		return app.NewPixivClient(cookie, ua, 5000)
+		client = app.NewPixivClient(5000)
 	}
+	if len(cookie) > 0 {
+		client.SetCookie(cookie)
+	}
+	if len(ua) > 0 {
+		client.SetUserAgent(ua)
+	}
+	return client
 }
 
 func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
@@ -95,5 +104,6 @@ func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
 func showUserInfo(PixivClient *app.PixivClient, uid string) {
 	pids, err := PixivClient.GetUserIllusts(uid)
 	cobra.CheckErr(err)
-	fmt.Println("illusts: ", pids)
+	j, _ := json.Marshal(pids)
+	fmt.Println("illusts: ", len(pids), string(j))
 }
