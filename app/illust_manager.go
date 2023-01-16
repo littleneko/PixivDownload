@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	log "github.com/sirupsen/logrus"
+	_ "modernc.org/sqlite"
 )
 
 type DatabaseType int
@@ -139,7 +139,7 @@ func NewSqliteIllustInfoMgr(options *PixivDlOptions) *SqliteIllustInfoMgr {
 		log.Fatalf("Failed to create database dir, msg: %s", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join(options.SqlitePath, "pixiv.db"))
+	db, err := sql.Open("sqlite", filepath.Join(options.SqlitePath, "pixiv.db"))
 	if err != nil {
 		log.Fatalf("Failed to open illustMgr, msg: %s", err)
 	}
