@@ -429,7 +429,7 @@ func (p *PixivClient) DownloadIllust(url, filename string) (int64, error) {
 		return 0, err
 	}
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
 		return 0, err
 	}
