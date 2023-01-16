@@ -19,7 +19,7 @@
 
 storage/
 pixiv/
-illust/
 log/
+bin/
 pixiv.yaml
 pixiv-dl
