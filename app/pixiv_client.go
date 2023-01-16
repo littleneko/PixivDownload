@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -422,31 +423,44 @@ func (p *PixivClient) GetIllustData(url string) ([]byte, error) {
 	return data, nil
 }
 
-func (p *PixivClient) DownloadIllust(url, filename string) (int64, error) {
+func (p *PixivClient) GetIllust(url string) (io.Reader, error) {
+	resp, err := p.getRaw(url, illustDownloadReferUrl)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
+// DownloadIllust download the illust to filename, return the file size and sha1 sum
+func (p *PixivClient) DownloadIllust(url, filename string) (int64, string, error) {
 	dirName := filepath.Dir(filename)
 	err := CheckAndMkdir(dirName)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
-
 	defer func() {
 		_ = file.Close()
 	}()
 
 	resp, err := p.getRaw(url, illustDownloadReferUrl)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
-	return io.Copy(file, resp.Body)
+	h := sha1.New()
+	r := io.TeeReader(resp.Body, h)
+	size, err := io.Copy(file, r)
+	sum := fmt.Sprintf("%x", h.Sum(nil))
+
+	return size, sum, err
 }
 
 // BookmarksFetcher is a wrapper of PixivClient.GetBookmarks, it records the bookmarks page offset and num
