@@ -109,11 +109,11 @@ func (d *DummyIllustInfoMgr) GetIllustCount(string) (int32, error) {
 	return 0, nil
 }
 
-func (d *DummyIllustInfoMgr) IsIllustExist(pid string) (bool, error) {
+func (d *DummyIllustInfoMgr) IsIllustExist(string) (bool, error) {
 	return false, nil
 }
 
-func (d *DummyIllustInfoMgr) IsIllustPageExist(id string, page int) (bool, error) {
+func (d *DummyIllustInfoMgr) IsIllustPageExist(string, int) (bool, error) {
 	return false, nil
 }
 
@@ -121,7 +121,7 @@ func (d *DummyIllustInfoMgr) SaveIllust(*IllustInfo, string, string) error {
 	return nil
 }
 
-func (d *DummyIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, error) {
+func (d *DummyIllustInfoMgr) GetIllustInfo(string, int) (*IllustInfo, error) {
 	return nil, errors.New("not found")
 }
 
@@ -157,7 +157,10 @@ func (ps *SqliteIllustInfoMgr) GetIllustCount(id string) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
+
 	var count int32 = 0
 	for rows.Next() {
 		err := rows.Scan(&count)
@@ -174,7 +177,10 @@ func (ps *SqliteIllustInfoMgr) getIllustPageCnt(pid string) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
+
 	var count int32 = 0
 	for rows.Next() {
 		err := rows.Scan(&count)
@@ -190,7 +196,10 @@ func (ps *SqliteIllustInfoMgr) IsIllustExist(pid string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
+
 	var count int32 = 0
 	for rows.Next() {
 		err := rows.Scan(&count)
@@ -214,7 +223,10 @@ func (ps *SqliteIllustInfoMgr) IsIllustPageExist(pid string, page int) (bool, er
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
+
 	var count int32 = 0
 	for rows.Next() {
 		err := rows.Scan(&count)
@@ -243,8 +255,10 @@ func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, 
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
-	defer rows.Close()
 	var illust IllustInfo
 	var (
 		hash     string

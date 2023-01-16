@@ -10,14 +10,13 @@ import (
 	"fmt"
 	"net/url"
 	"pixiv/app"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var shortMsg = false
-var illustIds []string
-var userId string
 
 // infoCmd represents the info command
 var infoCmd = &cobra.Command{
@@ -26,33 +25,33 @@ var infoCmd = &cobra.Command{
 }
 
 var illustInfoCmd = &cobra.Command{
-	Use:   "illust",
+	Use:   "illust [illust id list]",
 	Short: "Get illust info",
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cobra.CheckErr("Must give at least one illust id")
+		}
 		client := buildPixivClient()
+		illustIds := processListArgs(args)
 		showIllustInfo(client, illustIds)
 	},
 }
 
 var userInfoCmd = &cobra.Command{
-	Use:   "user",
+	Use:   "user [user id]",
 	Short: "Get user info",
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cobra.CheckErr("Must give a user id")
+		}
 		client := buildPixivClient()
-		showUserInfo(client, userId)
+		uid := strings.TrimSpace(args[0])
+		showUserInfo(client, uid)
 	},
 }
 
 func init() {
 	infoCmd.PersistentFlags().BoolVarP(&shortMsg, "short-msg", "s", false, "Show the short msg")
-
-	illustInfoCmd.Flags().StringSliceVar(&illustIds, "ids", []string{}, "Get the illust info of this pid")
-	err := illustInfoCmd.MarkFlagRequired("ids")
-	cobra.CheckErr(err)
-
-	userInfoCmd.Flags().StringVar(&userId, "uid", "", "Get the user info of this uid")
-	err = userInfoCmd.MarkFlagRequired("uid")
-	cobra.CheckErr(err)
 
 	infoCmd.AddCommand(illustInfoCmd)
 	infoCmd.AddCommand(userInfoCmd)
@@ -62,6 +61,7 @@ func buildPixivClient() *app.PixivClient {
 	proxy := viper.GetString("proxy")
 	cookie := viper.GetString("cookie")
 	ua := viper.GetString("user-agent")
+
 	var client *app.PixivClient
 	if len(proxy) > 0 {
 		proxyUrl, err := url.Parse(proxy)
@@ -102,8 +102,8 @@ func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
 }
 
 func showUserInfo(PixivClient *app.PixivClient, uid string) {
-	pids, err := PixivClient.GetUserIllusts(uid)
+	illustIds, err := PixivClient.GetUserIllusts(uid)
 	cobra.CheckErr(err)
-	j, _ := json.Marshal(pids)
-	fmt.Println("illusts: ", len(pids), string(j))
+	j, _ := json.Marshal(illustIds)
+	fmt.Println("illusts: ", len(illustIds), string(j))
 }

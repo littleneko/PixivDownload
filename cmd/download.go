@@ -6,7 +6,6 @@ Copyright © 2023 litao.little@gmail.com
 package cmd
 
 import (
-	log "github.com/sirupsen/logrus"
 	"math"
 	"os"
 	"os/signal"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,8 +28,10 @@ You can run it as service mode by '--service-mode' flag, it will check
 and download new illust periodically.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		app.InitLog(viper.GetString("log-path"), viper.GetString("log-level"))
+
 		options := getOptions()
 		log.Infof("Use options: %s", options.ToJson(true))
+
 		illustMgr, err := app.GetIllustInfoManager(options)
 		cobra.CheckErr(err)
 
@@ -56,16 +58,17 @@ var downloadIllustCmd = &cobra.Command{
 	Short: "Download by illust id",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			return
+			cobra.CheckErr("Must give at least one illust id")
 		}
-
 		app.InitLog(viper.GetString("log-path"), viper.GetString("log-level"))
 
 		options := getOptions()
-		options.DownloadIllustIds = processArgs(args)
+		options.DownloadIllustIds = processListArgs(args)
 		log.Infof("Use options: %s", options.ToJson(true))
+
 		illustMgr, err := app.GetIllustInfoManager(options)
 		cobra.CheckErr(err)
+
 		downloadIllusts(options, illustMgr)
 
 		if options.ServiceMode {
@@ -81,14 +84,17 @@ var downloadArtistCmd = &cobra.Command{
 	Short: "Download all illust of the user",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			return
+			cobra.CheckErr("Must give at least one user id")
 		}
 		app.InitLog(viper.GetString("log-path"), viper.GetString("log-level"))
+
 		options := getOptions()
-		options.DownloadArtistUserIds = processArgs(args)
+		options.DownloadArtistUserIds = processListArgs(args)
 		log.Infof("Use options: %s", options.ToJson(true))
+
 		illustMgr, err := app.GetIllustInfoManager(options)
 		cobra.CheckErr(err)
+
 		downloadArtists(options, illustMgr)
 
 		if options.ServiceMode {
@@ -104,14 +110,17 @@ var downloadBookmarkCmd = &cobra.Command{
 	Short: "Download all bookmark illust of the user",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			return
+			cobra.CheckErr("Must give at least one user id")
 		}
 		app.InitLog(viper.GetString("log-path"), viper.GetString("log-level"))
+
 		options := getOptions()
-		options.DownloadBookmarksUserIds = processArgs(args)
+		options.DownloadBookmarksUserIds = processListArgs(args)
 		log.Infof("Use options: %s", options.ToJson(true))
+
 		illustMgr, err := app.GetIllustInfoManager(options)
 		cobra.CheckErr(err)
+
 		downloadBookmarks(options, illustMgr)
 
 		if options.ServiceMode {
@@ -157,18 +166,24 @@ func init() {
 	downloadCmd.AddCommand(downloadBookmarkCmd)
 }
 
-func processArgs(args []string) []string {
-	var pIds []string
-	for _, arg := range args {
-		ids := strings.Split(arg, ",")
-		for _, id := range ids {
-			idt := strings.TrimSpace(id)
-			if len(idt) > 0 {
-				pIds = append(pIds, idt)
-			}
+func standardizeIds(ids []string) []string {
+	sIds := make([]string, 0)
+	for _, id := range ids {
+		idt := strings.TrimSpace(id)
+		if len(idt) > 0 {
+			sIds = append(sIds, idt)
 		}
 	}
-	return pIds
+	return sIds
+}
+
+func standardizeOptions(options *app.PixivDlOptions) {
+	options.DownloadIllustIds = standardizeIds(options.DownloadIllustIds)
+	options.DownloadFollowingUserIds = standardizeIds(options.DownloadFollowingUserIds)
+	options.DownloadArtistUserIds = standardizeIds(options.DownloadArtistUserIds)
+	options.DownloadBookmarksUserIds = standardizeIds(options.DownloadBookmarksUserIds)
+	options.UserBlockList = standardizeIds(options.UserBlockList)
+	options.UserWhiteList = standardizeIds(options.UserWhiteList)
 }
 
 func getOptions() *app.PixivDlOptions {
@@ -177,6 +192,7 @@ func getOptions() *app.PixivDlOptions {
 	if err != nil {
 		log.Fatalf("Failed to read config file, msg: %s", err)
 	}
+	standardizeOptions(&options)
 	return &options
 }
 
