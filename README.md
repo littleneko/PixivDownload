@@ -95,7 +95,7 @@ Docker run as service mode.
 ```shell
 docker run -d \
   --name=pixiv-dl \
-  -e PIXIV_DOWNLOAD_BOOKMARKS_UIDS=123456 \
+  -e PIXIV_DL_BOOKMARKS_UIDS=123456 \
   -e PIXIV_COOKIE=PHPSESSID=XYZ \
   -v /path/to/storage/folder:/storage \
   -v /path/to/download/folder:/pixiv \
