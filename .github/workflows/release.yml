@@ -44,4 +44,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: bin/*
-          draft: true
+          draft: false
