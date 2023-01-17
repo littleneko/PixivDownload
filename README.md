@@ -4,36 +4,32 @@ A tool to download pixiv illustrations.
 
 ## Usage
 
-Command line usage:
+命令行使用:
 
-* Download illustrations of specified illustration id: `pixiv-dl download illust 103842593,100259729`
-  or `pixiv-dl download --dl-illust-ids=103842593,100259729`
-* Download all illustrations of specified users: `pixiv-dl download artist 2131660`
-  or `pixiv-dl download --dl-artist-uids=2131660`
-* Download all illustrations of specified users which bookmark count great then
-  1000: `pixiv-dl download artist 2131660 --bookmark-gt=1000`
-* Download all illustrations in user's bookmarks: `pixiv-dl download bookmark 2131660`
-  or `pixiv-dl download --dl-bookmarks-uids=2131660`
+* 下载指定 id 的插画: `pixiv-dl download illust 103842593,100259729`
+  或是 `pixiv-dl download --dl-illust-ids=103842593,100259729`
+* 下载某个用户所有的插画: `pixiv-dl download artist 2131660` 或是 `pixiv-dl download --dl-artist-uids=2131660`
+* 下载某个用户所有收藏数量大于 1000 的插画: `pixiv-dl download artist 2131660 --bookmark-gt=1000`
+* 下载某个用户收藏的插画: `pixiv-dl download bookmark 2131660` 或是 `pixiv-dl download --dl-bookmarks-uids=2131660`
 
-If you get empty result or 'Bad Request' error, try to set a cookie by `--cookie` and `--user-agent`.
+如果返回了空结果或是 Bad Request 错误, 请尝试使用 cookies 登陆: 使用参数 `--cookie` 和 `--user-agent`.
 
-**There are some illustrations that can only be displayed after login, so it is highly recommended to use it with
-setting a cookie.**
+**因为有些插画必须登陆才能看到，所以强烈建议使用 cookies 登陆后使用.**
 
-You can use `--service-mode` to run as a service, it will check new illustrations periodically and download it.
+上面所列出的所有命令将在执行完下载任务后退出, 想要一直定时检查是否有新插画并下载, 请使用 `--service-mode`
+参数并使用 `--scan-interval-sec` 设置定时扫描时间间隔.
 
-For more information on how to use it, please use `pixiv-dl -h`, `pixiv-dl download -h` parameter to get.
+更多使用使用方法详见 `pixiv-dl -h` 和 `pixiv-dl download -h`.
 
-### Use Proxy
+### 使用代理
 
-pixiv-dl will auto use the `https_proxy` proxy setting from environment variable, you can set the environment
-by `export http_proxy=http://127.0.0.1:7890`, if you want to use another proxy, run pixiv-dl
-with `--proxy=http://ip:port` or `--proxy=socks5://ip:port`.
+pixiv-dl 会从环境变量中读取 `https_proxy` 代理信息, 如果想要使用自定义的 proxy, 可以使用 `--proxy=http://ip:port`
+或是 `--proxy=socks5://ip:port` 配置代理信息.
 
-### Config
+### 配置文件
 
-All command flags can be set by a yaml config file, If not specify a config file, it will find config file `pixiv.yaml`
-in `.` and `$HOME`.
+所有命令行参数都会从 yaml 配置文件中读取, 如果在启动时没有使用 `--config` 指定配置文件, 将从当前目录和 HOME
+目录寻找 `pixiv.yaml` 文件作为配置文件.
 
 ```yaml
 log-path:
@@ -71,22 +67,25 @@ like-gt: -1
 pixel-gt: -1
 ```
 
-* DatabaseType: pixiv-dl will store all illust info to the database, now only support 'sqlite'
-* UserId: your user id, you can get it from your homepage URL.
-* Cookie: your cookies, you can get it by F12
-* FileNamePattern: default `{id}`
-    * `{user_id}`: Illust user id
-    * `{user}`: Illust user name
-    * `{id}`: The "{id}" include pages, it looks like "123456_p0"
-    * `{title}`: Illust title
-* UserWhiteList/UserBlockList: filter illust in your bookmarks, block list will be ignored when white list is not empty.
+* database-type: 存储插画元数据和判断是否已经下载过的数据库, 默认使用 sqlite, 目前只支持 sqlite， 如果配置为 'NONE',
+  将不使用任何数据库也不判断是否重复
+* filename-pattern: default `{id}`
+    * `{user_id}`: 插画作者 id
+    * `{user}`: 插画作者 name
+    * `{id}`: 插画 id, 包括 page_idx, 类似 '123456_p0'
+    * `{title}`: 插画名称, 对于一些特殊字符和空格都会替换成 '_'
+* dl-bookmarks-uids: 下载指定用户的"收藏", 支持多个
+* dl-artist-uids: 下载指定用户所有的插画, 支持多个
+* dl-illust-ids: 下载指定 id 的插画, 支持多个
+* dl-following-uids: 暂不支持
 
-### ENV
+  > 上面 4 个参数可以同时提供
 
-All config item can be read from environment variable, the environment variable key *MUST* be upper case start
-with `PIXIV_` and split by `_` (e.g. `PIXIV_DOWNLOAD_PATH`).
+### 环境变量配置
 
-The priority is: 'command line flag' > 'environment' > 'config file'.
+所有配置项都会从环境变量中读取, 环境变量以 `PIXIV_` 开头, 并且使用 `_` 分割 (e.g. `PIXIV_DOWNLOAD_PATH`).
+
+配置优先级: 命令行参数 > 环境变量 > 配置文件
 
 ### Docker
 
