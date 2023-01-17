@@ -5,10 +5,9 @@ VERSION=$(shell git describe --tags || echo "unknown version")
 BUILDTIME=$(shell date -u)
 GOVERSION=$(shell go version)
 
-GOBUILD= go build -trimpath -ldflags "-X 'pixiv/cmd.Version=$(VERSION)' \
-									-X 'pixiv/cmd.BuildTime=$(BUILDTIME)' \
-									-X 'pixiv/cmd.GoVersion=$(GOVERSION)' \
-									-w -s"
+GOBUILD=CGO_ENABLED=0 go build -trimpath -ldflags "-X 'pixiv/cmd.Version=$(VERSION)' \
+	-X 'pixiv/cmd.BuildTime=$(BUILDTIME)' \
+	-X 'pixiv/cmd.GoVersion=$(GOVERSION)' -w -s"
 
 PLATFORM_LIST = \
 	darwin-amd64 \

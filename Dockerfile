@@ -13,12 +13,15 @@ ADD app ./app
 ADD cmd ./cmd
 COPY main.go ./
 
-RUN go build -o /pixiv-dl
+RUN CGO_ENABLED=0 go build -o /pixiv-dl
 
 ## Deploy
-FROM ubuntu:jammy
+FROM alpine:latest
 
-RUN apt update && apt install ca-certificates -y && update-ca-certificates
+ENV TZ Asia/Shanghai
+RUN apk update && apk --no-cache add tzdata && cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone
+
+RUN apk update && apk --no-cache add ca-certificates && update-ca-certificates
 
 WORKDIR /
 
