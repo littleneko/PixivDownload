@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	pixiv "github.com/littleneko/pixiv-api-go"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -18,13 +19,13 @@ type IllustDownloader struct {
 
 	options *PixivDlOptions
 
-	basicIllustChan chan *IllustDigest
-	fullIllustChan  chan *IllustInfo
+	basicIllustChan chan *pixiv.IllustDigest
+	fullIllustChan  chan *pixiv.IllustInfo
 }
 
 func NewIllustDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *IllustDownloader {
-	basicIllustChan := make(chan *IllustDigest, 50)
-	fullIllustChan := make(chan *IllustInfo, 100)
+	basicIllustChan := make(chan *pixiv.IllustDigest, 50)
+	fullIllustChan := make(chan *pixiv.IllustInfo, 100)
 
 	downloader := &IllustDownloader{
 		illustInfoWorker:     NewIllustInfoWorker(options, illustMgr, basicIllustChan, fullIllustChan),
@@ -58,8 +59,8 @@ func (d *IllustDownloader) Start() {
 
 	for {
 		for _, pid := range d.options.DownloadIllustIds {
-			d.basicIllustChan <- &IllustDigest{
-				Id:        PixivID(pid),
+			d.basicIllustChan <- &pixiv.IllustDigest{
+				Id:        pixiv.PixivID(pid),
 				PageCount: 1,
 			}
 		}
@@ -87,15 +88,15 @@ type BookmarksDownloader struct {
 
 	options *PixivDlOptions
 
-	uidChan         chan PixivID
-	basicIllustChan chan *IllustDigest
-	fullIllustChan  chan *IllustInfo
+	uidChan         chan pixiv.PixivID
+	basicIllustChan chan *pixiv.IllustDigest
+	fullIllustChan  chan *pixiv.IllustInfo
 }
 
 func NewBookmarksDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *BookmarksDownloader {
-	uidChan := make(chan PixivID, 10)
-	basicIllustChan := make(chan *IllustDigest, 50)
-	fullIllustChan := make(chan *IllustInfo, 100)
+	uidChan := make(chan pixiv.PixivID, 10)
+	basicIllustChan := make(chan *pixiv.IllustDigest, 50)
+	fullIllustChan := make(chan *pixiv.IllustInfo, 100)
 
 	downloader := &BookmarksDownloader{
 		bookmarksWorker:      NewBookmarksWorker(options, illustMgr, uidChan, basicIllustChan),
@@ -134,7 +135,7 @@ func (d *BookmarksDownloader) Start() {
 
 	for {
 		for _, uid := range d.options.DownloadBookmarksUserIds {
-			d.uidChan <- PixivID(uid)
+			d.uidChan <- pixiv.PixivID(uid)
 		}
 
 		d.waitDone(uint64(len(d.options.DownloadBookmarksUserIds)))
@@ -161,15 +162,15 @@ type ArtistDownloader struct {
 
 	options *PixivDlOptions
 
-	uidChan         chan PixivID
-	basicIllustChan chan *IllustDigest
-	fullIllustChan  chan *IllustInfo
+	uidChan         chan pixiv.PixivID
+	basicIllustChan chan *pixiv.IllustDigest
+	fullIllustChan  chan *pixiv.IllustInfo
 }
 
 func NewArtistDownloader(options *PixivDlOptions, illustMgr IllustInfoManager) *ArtistDownloader {
-	uidChan := make(chan PixivID, 10)
-	basicIllustChan := make(chan *IllustDigest, 50)
-	fullIllustChan := make(chan *IllustInfo, 100)
+	uidChan := make(chan pixiv.PixivID, 10)
+	basicIllustChan := make(chan *pixiv.IllustDigest, 50)
+	fullIllustChan := make(chan *pixiv.IllustInfo, 100)
 
 	downloader := &ArtistDownloader{
 		artistWorker:         NewArtistWorker(options, illustMgr, uidChan, basicIllustChan),
@@ -208,7 +209,7 @@ func (d *ArtistDownloader) Start() {
 
 	for {
 		for _, uid := range d.options.DownloadArtistUserIds {
-			d.uidChan <- PixivID(uid)
+			d.uidChan <- pixiv.PixivID(uid)
 		}
 
 		d.waitDone(uint64(len(d.options.DownloadArtistUserIds)))

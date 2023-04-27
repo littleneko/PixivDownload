@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	pixiv "github.com/littleneko/pixiv-api-go"
 	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
 )
@@ -43,8 +44,8 @@ type IllustInfoManager interface {
 	GetIllustCount(pid string) (int32, error)
 	IsIllustExist(pid string) (bool, error)
 	IsIllustPageExist(pid string, page int) (bool, error)
-	SaveIllust(illust *IllustInfo, hash string, filename string) error
-	GetIllustInfo(pid string, page int) (*IllustInfo, error)
+	SaveIllust(illust *pixiv.IllustInfo, hash string, filename string) error
+	GetIllustInfo(pid string, page int) (*pixiv.IllustInfo, error)
 	CheckDatabaseAndFile() error
 }
 
@@ -117,11 +118,11 @@ func (d *DummyIllustInfoMgr) IsIllustPageExist(string, int) (bool, error) {
 	return false, nil
 }
 
-func (d *DummyIllustInfoMgr) SaveIllust(*IllustInfo, string, string) error {
+func (d *DummyIllustInfoMgr) SaveIllust(*pixiv.IllustInfo, string, string) error {
 	return nil
 }
 
-func (d *DummyIllustInfoMgr) GetIllustInfo(string, int) (*IllustInfo, error) {
+func (d *DummyIllustInfoMgr) GetIllustInfo(string, int) (*pixiv.IllustInfo, error) {
 	return nil, errors.New("not found")
 }
 
@@ -238,7 +239,7 @@ func (ps *SqliteIllustInfoMgr) IsIllustPageExist(pid string, page int) (bool, er
 	return count == 1, nil
 }
 
-func (ps *SqliteIllustInfoMgr) SaveIllust(illust *IllustInfo, hash string, filename string) error {
+func (ps *SqliteIllustInfoMgr) SaveIllust(illust *pixiv.IllustInfo, hash string, filename string) error {
 	tags, _ := json.Marshal(illust.Tags)
 	_, err := ps.db.Exec(saveIllustSql,
 		illust.Id, illust.PageIdx, illust.Title, illust.Urls.Original, illust.R18, tags, illust.Description, illust.Width, illust.Height,
@@ -250,7 +251,7 @@ func (ps *SqliteIllustInfoMgr) SaveIllust(illust *IllustInfo, hash string, filen
 	return nil
 }
 
-func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, error) {
+func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*pixiv.IllustInfo, error) {
 	rows, err := ps.db.Query(getIllustSql, id, page)
 	if err != nil {
 		return nil, err
@@ -259,7 +260,7 @@ func (ps *SqliteIllustInfoMgr) GetIllustInfo(id string, page int) (*IllustInfo, 
 		_ = rows.Close()
 	}()
 
-	var illust IllustInfo
+	var illust pixiv.IllustInfo
 	var (
 		hash     string
 		filename string

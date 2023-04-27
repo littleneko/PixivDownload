@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"pixiv/app"
 	"strings"
 
+	pixiv "github.com/littleneko/pixiv-api-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -57,21 +57,26 @@ func init() {
 	infoCmd.AddCommand(userInfoCmd)
 }
 
-func buildPixivClient() *app.PixivClient {
+func buildPixivClient() *pixiv.PixivClient {
 	proxy := viper.GetString("proxy")
 	cookie := viper.GetString("cookie")
 	ua := viper.GetString("user-agent")
 
-	var client *app.PixivClient
+	var client *pixiv.PixivClient
 	if len(proxy) > 0 {
 		proxyUrl, err := url.Parse(proxy)
 		cobra.CheckErr(err)
-		client = app.NewPixivClientWithProxy(proxyUrl, 5000)
+		client = pixiv.NewPixivClientWithProxy(proxyUrl, 5000)
 	} else {
-		client = app.NewPixivClient(5000)
+		client = pixiv.NewPixivClient(5000)
 	}
 	if len(cookie) > 0 {
-		client.SetCookie(cookie)
+		cookieKV := strings.Split(cookie, "=")
+		if len(cookieKV) == 2 {
+			client.AddCookie(cookieKV[0], cookieKV[1])
+		} else {
+			client.SetCookiePHPSESSID(cookie)
+		}
 	}
 	if len(ua) > 0 {
 		client.SetUserAgent(ua)
@@ -79,9 +84,9 @@ func buildPixivClient() *app.PixivClient {
 	return client
 }
 
-func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
+func showIllustInfo(pixivClient *pixiv.PixivClient, illusts []string) {
 	for _, pid := range illusts {
-		illusts, err := pixivClient.GetIllustInfo(app.PixivID(pid), false)
+		illusts, err := pixivClient.GetIllustInfo(pixiv.PixivID(pid), false)
 		if err != nil {
 			fmt.Printf("ID: %s,\tERROE: %s\n", pid, err)
 			continue
@@ -101,7 +106,7 @@ func showIllustInfo(pixivClient *app.PixivClient, illusts []string) {
 	}
 }
 
-func showUserInfo(PixivClient *app.PixivClient, uid string) {
+func showUserInfo(PixivClient *pixiv.PixivClient, uid string) {
 	illustIds, err := PixivClient.GetUserIllusts(uid)
 	cobra.CheckErr(err)
 	j, _ := json.Marshal(illustIds)

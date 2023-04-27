@@ -9,8 +9,14 @@ import (
 	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	pixiv "github.com/littleneko/pixiv-api-go"
 	log "github.com/sirupsen/logrus"
 )
+
+func isJsonUnmarshalError(err error) bool {
+	_, ok := err.(*pixiv.ErrorJsonUnmarshal)
+	return ok
+}
 
 const BookmarksPageLimit = 48
 
@@ -21,10 +27,10 @@ type PixivWorker interface {
 type pixivWorker struct {
 	options   *PixivDlOptions
 	illustMgr IllustInfoManager
-	client    *PixivClient
+	client    *pixiv.PixivClient
 
-	userWhiteListFilter mapset.Set[PixivID]
-	userBlockListFilter mapset.Set[PixivID]
+	userWhiteListFilter mapset.Set[pixiv.PixivID]
+	userBlockListFilter mapset.Set[pixiv.PixivID]
 
 	consumeCnt uint64
 	produceCnt uint64
@@ -34,30 +40,35 @@ func newPixivWorker(options *PixivDlOptions, manager IllustInfoManager, timeout 
 	worker := &pixivWorker{
 		options:             options,
 		illustMgr:           manager,
-		userWhiteListFilter: mapset.NewSet[PixivID](),
-		userBlockListFilter: mapset.NewSet[PixivID](),
+		userWhiteListFilter: mapset.NewSet[pixiv.PixivID](),
+		userBlockListFilter: mapset.NewSet[pixiv.PixivID](),
 		consumeCnt:          0,
 		produceCnt:          0,
 	}
 
 	if len(options.Proxy) > 0 {
 		proxy, _ := url.Parse(options.Proxy)
-		worker.client = NewPixivClientWithProxy(proxy, timeout)
+		worker.client = pixiv.NewPixivClientWithProxy(proxy, timeout)
 	} else {
-		worker.client = NewPixivClient(timeout)
+		worker.client = pixiv.NewPixivClient(timeout)
 	}
 	if len(options.Cookie) > 0 {
-		worker.client.SetCookie(options.Cookie)
+		cookieKV := strings.Split(options.Cookie, "=")
+		if len(cookieKV) == 2 {
+			worker.client.AddCookie(cookieKV[0], cookieKV[1])
+		} else {
+			worker.client.SetCookiePHPSESSID(options.Cookie)
+		}
 	}
 	if len(options.UserAgent) > 0 {
 		worker.client.SetUserAgent(options.UserAgent)
 	}
 
 	for _, uid := range options.UserWhiteList {
-		worker.userWhiteListFilter.Add(PixivID(uid))
+		worker.userWhiteListFilter.Add(pixiv.PixivID(uid))
 	}
 	for _, uid := range options.UserBlockList {
-		worker.userBlockListFilter.Add(PixivID(uid))
+		worker.userBlockListFilter.Add(pixiv.PixivID(uid))
 	}
 	return worker
 }
@@ -80,7 +91,7 @@ func (w *pixivWorker) retry(workFunc func() bool) {
 }
 
 // filterByUser return true means this illust should be skipped
-func (w *pixivWorker) filterByUser(illustInfo *IllustDigest) bool {
+func (w *pixivWorker) filterByUser(illustInfo *pixiv.IllustDigest) bool {
 	// invalid user id
 	if len(illustInfo.UserId) == 0 {
 		return false
@@ -99,7 +110,7 @@ func (w *pixivWorker) filterByUser(illustInfo *IllustDigest) bool {
 	return false
 }
 
-func (w *pixivWorker) filterByIllustInfo(illust *IllustInfo) bool {
+func (w *pixivWorker) filterByIllustInfo(illust *pixiv.IllustInfo) bool {
 	if w.options.NoR18 && illust.R18 {
 		log.Infof("[PixivWorker] Skip R18 illust: %s", illust.DigestString())
 		return true
@@ -127,7 +138,7 @@ func (w *pixivWorker) filterByIllustInfo(illust *IllustInfo) bool {
 	return false
 }
 
-func (w *pixivWorker) checkIllustExist(id PixivID) (bool, error) {
+func (w *pixivWorker) checkIllustExist(id pixiv.PixivID) (bool, error) {
 	exist := false
 	err := Retry(func() error {
 		var err error
@@ -137,7 +148,7 @@ func (w *pixivWorker) checkIllustExist(id PixivID) (bool, error) {
 	return exist, err
 }
 
-func (w *pixivWorker) checkIllustPageExist(id PixivID, page int) (bool, error) {
+func (w *pixivWorker) checkIllustPageExist(id pixiv.PixivID, page int) (bool, error) {
 	exist := false
 	err := Retry(func() error {
 		var err error
@@ -147,14 +158,14 @@ func (w *pixivWorker) checkIllustPageExist(id PixivID, page int) (bool, error) {
 	return exist, err
 }
 
-func (w *pixivWorker) saveIllustInfo(illust *IllustInfo, hash, filename string) error {
+func (w *pixivWorker) saveIllustInfo(illust *pixiv.IllustInfo, hash, filename string) error {
 	return Retry(func() error {
 		return w.illustMgr.SaveIllust(illust, hash, filename)
 	}, 3)
 }
 
-func (w *pixivWorker) markIllustNotFound(id PixivID) error {
-	illust := &IllustInfo{
+func (w *pixivWorker) markIllustNotFound(id pixiv.PixivID) error {
+	illust := &pixiv.IllustInfo{
 		Id:        id,
 		PageIdx:   0,
 		PageCount: 1,
@@ -190,12 +201,12 @@ func (w *pixivWorker) ResetCnt() {
 type BookmarksWorker struct {
 	*pixivWorker
 
-	input  <-chan PixivID // input user id
-	output chan<- *IllustDigest
+	input  <-chan pixiv.PixivID // input user id
+	output chan<- *pixiv.IllustDigest
 }
 
 func NewBookmarksWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan PixivID, output chan<- *IllustDigest) *BookmarksWorker {
+	input <-chan pixiv.PixivID, output chan<- *pixiv.IllustDigest) *BookmarksWorker {
 	worker := &BookmarksWorker{
 		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:       input,
@@ -214,7 +225,7 @@ func (w *BookmarksWorker) Run() {
 	}()
 }
 
-func (w *BookmarksWorker) processInput(uid PixivID) {
+func (w *BookmarksWorker) processInput(uid pixiv.PixivID) {
 	bookmarkClient := NewBookmarksPageClient(w.client, string(uid), BookmarksPageLimit)
 	for {
 		if !bookmarkClient.HasMorePage() {
@@ -223,7 +234,7 @@ func (w *BookmarksWorker) processInput(uid PixivID) {
 		}
 		w.retry(func() bool {
 			bmInfos, err := bookmarkClient.GetNextPageBookmarks()
-			if err == ErrNotFound || err == ErrFailedUnmarshal {
+			if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
 				log.Warningf("[BookmarksWorker] Skip bookmarks page, offset: %d, msg: %s", bookmarkClient.CurOffset(), err)
 				return true
 			}
@@ -243,9 +254,9 @@ func (w *BookmarksWorker) processInput(uid PixivID) {
 	}
 }
 
-func (w *BookmarksWorker) processOutput(bmInfo *BookmarksInfo) error {
+func (w *BookmarksWorker) processOutput(bmInfo *pixiv.BookmarksInfo) error {
 	for idx := range bmInfo.Works {
-		illust := &bmInfo.Works[idx]
+		illust := bmInfo.Works[idx]
 		if w.filterByUser(illust) {
 			continue
 		}
@@ -271,12 +282,12 @@ func (w *BookmarksWorker) processOutput(bmInfo *BookmarksInfo) error {
 type ArtistWorker struct {
 	*pixivWorker
 
-	input  <-chan PixivID // input user id
-	output chan<- *IllustDigest
+	input  <-chan pixiv.PixivID // input user id
+	output chan<- *pixiv.IllustDigest
 }
 
 func NewArtistWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan PixivID, output chan<- *IllustDigest) *ArtistWorker {
+	input <-chan pixiv.PixivID, output chan<- *pixiv.IllustDigest) *ArtistWorker {
 	worker := &ArtistWorker{
 		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:       input,
@@ -295,10 +306,10 @@ func (w *ArtistWorker) Run() {
 	}()
 }
 
-func (w *ArtistWorker) processInput(uid PixivID) {
+func (w *ArtistWorker) processInput(uid pixiv.PixivID) {
 	w.retry(func() bool {
 		illustIds, err := w.client.GetUserIllusts(string(uid))
-		if err == ErrNotFound || err == ErrFailedUnmarshal {
+		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
 			log.Warningf("[ArtistWorker] Skip user: %s, msg: %s", uid, err)
 			return true
 		}
@@ -317,7 +328,7 @@ func (w *ArtistWorker) processInput(uid PixivID) {
 	})
 }
 
-func (w *ArtistWorker) processOutput(illustIds []PixivID) error {
+func (w *ArtistWorker) processOutput(illustIds []pixiv.PixivID) error {
 	for _, id := range illustIds {
 		exist, err := w.checkIllustExist(id)
 		if err != nil {
@@ -329,7 +340,7 @@ func (w *ArtistWorker) processOutput(illustIds []PixivID) error {
 			continue
 		}
 
-		var illust = &IllustDigest{
+		var illust = &pixiv.IllustDigest{
 			Id:        id,
 			PageCount: 1,
 		}
@@ -342,12 +353,12 @@ func (w *ArtistWorker) processOutput(illustIds []PixivID) error {
 // IllustInfoWorker process the input basic illust info and output full illust info
 type IllustInfoWorker struct {
 	*pixivWorker
-	input  <-chan *IllustDigest
-	output chan<- *IllustInfo
+	input  <-chan *pixiv.IllustDigest
+	output chan<- *pixiv.IllustInfo
 }
 
 func NewIllustInfoWorker(options *PixivDlOptions, illustMgr IllustInfoManager,
-	input <-chan *IllustDigest, output chan<- *IllustInfo) *IllustInfoWorker {
+	input <-chan *pixiv.IllustDigest, output chan<- *pixiv.IllustInfo) *IllustInfoWorker {
 	worker := &IllustInfoWorker{
 		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:       input,
@@ -368,7 +379,7 @@ func (w *IllustInfoWorker) Run() {
 	}
 }
 
-func (w *IllustInfoWorker) processInput(illust *IllustDigest) {
+func (w *IllustInfoWorker) processInput(illust *pixiv.IllustDigest) {
 	w.retry(func() bool {
 		exist, err := w.checkIllustExist(illust.Id)
 		if err != nil {
@@ -381,9 +392,9 @@ func (w *IllustInfoWorker) processInput(illust *IllustDigest) {
 		}
 
 		illusts, err := w.client.GetIllustInfo(illust.Id, w.options.OnlyP0)
-		if err == ErrNotFound || err == ErrFailedUnmarshal {
+		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
 			log.Warningf("[IllustInfoWorker] Skip illust: %s, msg: %s", illust.DigestString(), err)
-			if err == ErrNotFound {
+			if err == pixiv.ErrNotFound {
 				_ = w.markIllustNotFound(illust.Id)
 			}
 			return true
@@ -399,7 +410,7 @@ func (w *IllustInfoWorker) processInput(illust *IllustDigest) {
 	})
 }
 
-func (w *IllustInfoWorker) processOutput(illusts []*IllustInfo) {
+func (w *IllustInfoWorker) processOutput(illusts []*pixiv.IllustInfo) {
 	for idx := range illusts {
 		fullIllust := illusts[idx]
 		if w.filterByIllustInfo(fullIllust) {
@@ -413,10 +424,10 @@ func (w *IllustInfoWorker) processOutput(illusts []*IllustInfo) {
 // IllustDownloadWorker process the input full illust info and download the illust to disk
 type IllustDownloadWorker struct {
 	*pixivWorker
-	input <-chan *IllustInfo
+	input <-chan *pixiv.IllustInfo
 }
 
-func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *IllustInfo) *IllustDownloadWorker {
+func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *pixiv.IllustInfo) *IllustDownloadWorker {
 	worker := &IllustDownloadWorker{
 		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
 		input:       illustChan,
@@ -436,7 +447,7 @@ func (w *IllustDownloadWorker) Run() {
 	}
 }
 
-func FormatFileName(illust *IllustInfo, pattern string) string {
+func FormatFileName(illust *pixiv.IllustInfo, pattern string) string {
 	filename := filepath.Base(illust.Urls.Original)
 	if len(pattern) == 0 {
 		return filename
@@ -453,7 +464,7 @@ func FormatFileName(illust *IllustInfo, pattern string) string {
 	return newName
 }
 
-func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
+func (w *IllustDownloadWorker) processInput(illust *pixiv.IllustInfo) {
 	if len(illust.Urls.Original) == 0 {
 		log.Warningf("[IllustDownloadWorker] Skip empty url illust: %s", illust.DigestString())
 		return
@@ -473,7 +484,7 @@ func (w *IllustDownloadWorker) processInput(illust *IllustInfo) {
 
 		start := time.Now()
 		size, hash, err := w.client.DownloadIllust(illust.Urls.Original, fullFilename)
-		if err == ErrNotFound || err == ErrFailedUnmarshal {
+		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
 			return true
 		}
 		if err != nil {
