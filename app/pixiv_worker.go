@@ -429,7 +429,7 @@ type IllustDownloadWorker struct {
 
 func NewIllustDownloadWorker(options *PixivDlOptions, illustMgr IllustInfoManager, illustChan <-chan *pixiv.IllustInfo) *IllustDownloadWorker {
 	worker := &IllustDownloadWorker{
-		pixivWorker: newPixivWorker(options, illustMgr, options.ParseTimeoutMs),
+		pixivWorker: newPixivWorker(options, illustMgr, options.DownloadTimeoutMs),
 		input:       illustChan,
 	}
 	return worker
