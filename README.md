@@ -2,6 +2,11 @@
 
 A tool to download pixiv illustrations.
 
+[![Build Status](https://github.com/littleneko/pixivdownload/actions/workflows/release.yml/badge.svg)](https://github.com/littleneko/pixivdownload/actions)
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/littleneko/pixivdownload.svg)](https://github.com/littleneko/pixivdownload/tags)
+[![GitHub release](https://img.shields.io/github/release/littleneko/pixivdownload.svg)](https://github.com/littleneko/pixivdownload/releases)
+[![GitHub license](https://img.shields.io/github/license/littleneko/pixivdownload.svg)](https://github.com/littleneko/pixivdownload/blob/main/LICENSE)
+
 ## Usage
 
 命令行使用:
