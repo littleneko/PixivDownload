@@ -1,6 +1,9 @@
 package app
 
-import pixiv "github.com/littleneko/pixiv-api-go"
+import (
+	"errors"
+	pixiv "github.com/littleneko/pixiv-api-go"
+)
 
 type pixivPageClient struct {
 	client    *pixiv.PixivClient
@@ -46,7 +49,7 @@ func NewBookmarksPageClient(client *pixiv.PixivClient, uid string, limit int32) 
 func (bpc *PixivBookmarksPageClient) GetNextPageBookmarks() (*pixiv.BookmarksInfo, error) {
 	bmInfo, err := bpc.client.GetUserBookmarks(bpc.uid, bpc.curOffset, bpc.limit)
 	// mark this user as invalid user, it has no next page
-	if err == pixiv.ErrNotFound {
+	if errors.Is(err, pixiv.ErrNotFound) {
 		bpc.total = 0
 	}
 	if err != nil {
@@ -78,7 +81,7 @@ func NewFollowingPageClient(client *pixiv.PixivClient, uid string, limit int32) 
 func (fpc *PixivFollowingPageClient) GetNextPageFollowing() (*pixiv.FollowingInfo, error) {
 	bmInfo, err := fpc.client.GetUserFollowing(fpc.uid, fpc.curOffset, fpc.limit)
 	// mark this user as invalid user, it has no next page
-	if err == pixiv.ErrNotFound {
+	if errors.Is(err, pixiv.ErrNotFound) {
 		fpc.total = 0
 	}
 	if err != nil {

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -102,15 +103,12 @@ func initConfig() {
 	// If a config file is found, read it in.
 	err := viper.ReadInConfig()
 	if err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		_, _ = fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	} else {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
 			// Config file not found; ignore error if desired
-			fmt.Fprintln(os.Stderr, "Config file not found, use default config")
-		} else {
-			// Config file was found but another error was produced
-			fmt.Fprintln(os.Stderr, "Failed to read config file.", err)
-			panic(err.Error())
+			_, _ = fmt.Fprintln(os.Stderr, "Config file not found, use default config")
 		}
 	}
 }

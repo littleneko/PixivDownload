@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"math/rand"
 	"net/url"
 	"path/filepath"
@@ -14,7 +15,8 @@ import (
 )
 
 func isJsonUnmarshalError(err error) bool {
-	_, ok := err.(*pixiv.ErrorJsonUnmarshal)
+	var errorJsonUnmarshal *pixiv.ErrorJsonUnmarshal
+	ok := errors.As(err, &errorJsonUnmarshal)
 	return ok
 }
 
@@ -234,7 +236,7 @@ func (w *BookmarksWorker) processInput(uid pixiv.PixivID) {
 		}
 		w.retry(func() bool {
 			bmInfos, err := bookmarkClient.GetNextPageBookmarks()
-			if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
+			if errors.Is(err, pixiv.ErrNotFound) || isJsonUnmarshalError(err) {
 				log.Warningf("[BookmarksWorker] Skip bookmarks page, offset: %d, msg: %s", bookmarkClient.CurOffset(), err)
 				return true
 			}
@@ -309,7 +311,7 @@ func (w *ArtistWorker) Run() {
 func (w *ArtistWorker) processInput(uid pixiv.PixivID) {
 	w.retry(func() bool {
 		illustIds, err := w.client.GetUserIllusts(string(uid))
-		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
+		if errors.Is(err, pixiv.ErrNotFound) || isJsonUnmarshalError(err) {
 			log.Warningf("[ArtistWorker] Skip user: %s, msg: %s", uid, err)
 			return true
 		}
@@ -392,9 +394,9 @@ func (w *IllustInfoWorker) processInput(illust *pixiv.IllustDigest) {
 		}
 
 		illusts, err := w.client.GetIllustInfo(illust.Id, w.options.OnlyP0)
-		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
+		if errors.Is(err, pixiv.ErrNotFound) || isJsonUnmarshalError(err) {
 			log.Warningf("[IllustInfoWorker] Skip illust: %s, msg: %s", illust.DigestString(), err)
-			if err == pixiv.ErrNotFound {
+			if errors.Is(err, pixiv.ErrNotFound) {
 				_ = w.markIllustNotFound(illust.Id)
 			}
 			return true
@@ -484,7 +486,7 @@ func (w *IllustDownloadWorker) processInput(illust *pixiv.IllustInfo) {
 
 		start := time.Now()
 		size, hash, err := w.client.DownloadIllust(illust.Urls.Original, fullFilename)
-		if err == pixiv.ErrNotFound || isJsonUnmarshalError(err) {
+		if errors.Is(err, pixiv.ErrNotFound) || isJsonUnmarshalError(err) {
 			return true
 		}
 		if err != nil {

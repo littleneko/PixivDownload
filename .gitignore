@@ -23,3 +23,5 @@ log/
 bin/
 pixiv.yaml
 pixiv-dl
+
+qodana.yaml
