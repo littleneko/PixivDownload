@@ -33,4 +33,4 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /pixiv-dl
 RUN chmod +x /entrypoint.sh
 
-CMD ["/entrypoint.sh", "/pixiv-dl", "download", "--service-mode"]
+ENTRYPOINT ["/entrypoint.sh", "/pixiv-dl", "download", "--service-mode"]
