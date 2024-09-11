@@ -23,8 +23,14 @@ RUN apk update && apk --no-cache add tzdata && cp /usr/share/zoneinfo/${TZ} /etc
 
 RUN apk update && apk --no-cache add ca-certificates && update-ca-certificates
 
+RUN apk update && apk --no-cache add su-exec
+
+
 WORKDIR /
 
 COPY --from=build /pixiv-dl /pixiv-dl
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /pixiv-dl
+RUN chmod +x /entrypoint.sh
 
-CMD ["/pixiv-dl", "download", "--service-mode"]
+CMD ["/entrypoint.sh", "/pixiv-dl", "download", "--service-mode"]

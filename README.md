@@ -94,11 +94,14 @@ pixel-gt: -1
 
 ### Docker
 
-Docker run as service mode.
+Docker run as service mode. 
+Note that pixiv-dl runs as UID 1000 and GID 1000 by default. These may be altered with the `PUID` and `PGID` environment variables.
 
 ```shell
 docker run -d \
   --name=pixiv-dl \
+  -e PUID=1000 \
+  -e PGID=1000 \
   -e PIXIV_DL_BOOKMARKS_UIDS=123456 \
   -e PIXIV_COOKIE=PHPSESSID=XYZ \
   -v /path/to/storage/folder:/storage \
